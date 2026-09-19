@@ -23,8 +23,8 @@ android {
         applicationId = "easy.agent.compose"
         minSdk = 26
         targetSdk = 37
-        versionCode = 28
-        versionName = "0.13.2"
+        versionCode = 1
+        versionName = "0.1.0"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 

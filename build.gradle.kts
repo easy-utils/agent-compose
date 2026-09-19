@@ -153,7 +153,7 @@ compose.desktop {
             // format is actually produced); the appstore publishes the deb.
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Easy Agent"
-            packageVersion = "1.6.0"
+            packageVersion = "0.1.0"
             description = "Easy Agent (Compose Multiplatform)"
             vendor = "EasyLab"
             macOS {
