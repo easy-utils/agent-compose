@@ -141,7 +141,7 @@ import com.composables.icons.lucide.Users
 import com.composables.icons.lucide.Video
 import com.composables.icons.lucide.TriangleAlert
 
-/** Semantic icon slots shared by all four ABCP clients (tools/icons.py).
+/** Semantic icon slots shared by all four Easy Agent clients (tools/icons.py).
  *
  *  Compose's Lucide port exposes glyphs as extension properties on the
  *  `Lucide` object, so this table adapts the cross-client slot names to
