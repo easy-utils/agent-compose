@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <!-- viewport: NO `viewport-fit=cover`.
-       The three runtimes size themselves differently — Flutter reads
-       window.innerHeight/visualViewport, webui uses 100dvh, Compose measures
-       its mount element — and NONE of them applies env(safe-area-inset-*).
+       The two runtimes size themselves differently — Flutter reads
+       window.innerHeight/visualViewport, Compose measures its mount element —
+       and NEITHER applies env(safe-area-inset-*).
        With `cover`, the layout viewport extends UNDER the Android gesture bar /
        iOS home indicator, so the bottom ~48px (composer + tab bar) were painted
        off-screen in an INSTALLED PWA (a browser TAB looked fine because its

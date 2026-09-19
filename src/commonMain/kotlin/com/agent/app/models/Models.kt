@@ -143,6 +143,18 @@ data class UploadedFile(
     val hasError: Boolean get() = uploadState == UploadState.ERROR
 }
 
+/** File metadata from GetFileMeta. The optional media facts are populated
+ *  (server-side, best-effort) only for supported image/video/audio files. */
+data class FileMeta(
+    val contentType: String? = null,
+    val length: Long = 0,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Long? = null,
+    val thumbCode: String? = null,
+    val thumbhash: String? = null,
+)
+
 data class ChatDraft(
     var text: String = "",
     var attachments: MutableList<UploadedFile> = mutableListOf(),

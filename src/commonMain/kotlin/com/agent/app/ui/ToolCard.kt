@@ -38,7 +38,7 @@ import com.agent.app.models.ToolState
 // status → ONE fixed glyph (`tools` / primary) → name → italic title →
 // chevron, and whose SECTIONS are bordered sub-boxes (input / content /
 // metadata) that each fold independently. Nothing varies by tool family; a
-// result carrying file refs in its `data` (images/videos/audio) additionally
+// result carrying file refs in its `data.files` additionally
 // renders media cards in the content section.
 
 /** flutter `toolDisplayName`: `todowrite` shows as `todo`. */
@@ -64,9 +64,9 @@ private fun prettyJson(m: Map<String, Any?>): String = buildString {
 }
 
 /**
- * mediaRefs — fixed media fields in a tool result's `data`: `images` / `videos`
- * / `audio` (each `{code, mime, name}`, or a list of them). Flutter
- * `_mediaRefs` / WebUI `mediaRefs` / SwiftUI `mediaRefs` collect the same keys.
+ * mediaRefs — produced-file refs in a tool result's `data.files` (each
+ * `{code, mime, name, bytes}`, or a list of them). Every client collects the
+ * same single key.
  */
 private fun mediaRefs(data: Map<String, Any?>?): List<Triple<String, String?, String?>> {
     if (data == null) return emptyList()
@@ -78,12 +78,10 @@ private fun mediaRefs(data: Map<String, Any?>?): List<Triple<String, String?, St
             out.add(Triple(code, m["mime"] as? String, m["name"] as? String))
         }
     }
-    for (key in listOf("images", "videos", "audio")) {
-        when (val v = data[key]) {
-            is List<*> -> v.forEach { collect(it) }
-            null -> {}
-            else -> collect(v)
-        }
+    when (val v = data["files"]) {
+        is List<*> -> v.forEach { collect(it) }
+        null -> {}
+        else -> collect(v)
     }
     return out
 }
@@ -195,7 +193,7 @@ fun ToolCard(
                     } else if (!state.output.isNullOrEmpty()) {
                         MonoBody(state.output)
                     }
-                    // File refs the tool emitted in `data` (images/videos/audio)
+                    // Produced-file refs the tool emitted in `data.files`
                     // render as first-class media cards — the "file field" case.
                     if (api != null) {
                         for (ref in mediaRefs(data)) {

@@ -3,6 +3,7 @@ package com.agent.app
 import com.agent.app.models.MailboxEntry
 import com.agent.app.models.Message
 import com.agent.app.models.MessagePart
+import com.agent.app.models.FileMeta
 import com.agent.app.models.ModelInfo
 import com.agent.app.models.ModelVariantInfo
 import com.agent.app.models.Preset
@@ -262,17 +263,26 @@ class AgentApiImpl private constructor(
         return messageId
     }
 
-    override suspend fun uploadFile(name: String, mime: String, bytes: ByteArray): UploadedFile {
-        val r = agent.ingestFile(IngestFileRequest(data = ByteArr(bytes), name = name, mime = mime))
-        return UploadedFile(code = r.code, name = name, mime = mime, size = bytes.size)
+    override suspend fun uploadFile(name: String, bytes: ByteArray): UploadedFile {
+        val r = agent.ingestFile(IngestFileRequest(data = ByteArr(bytes), name = name))
+        // The agent DERIVES the content type from the bytes; adopt its answer.
+        return UploadedFile(code = r.code, name = name, mime = r.mime, size = bytes.size)
     }
 
     override suspend fun fetchFileBytes(code: String): ByteArray =
         agent.getFile(GetFileRequest(code)).data.array
 
-    override suspend fun fileHead(code: String): Pair<String?, Long> {
+    override suspend fun fileHead(code: String): FileMeta {
         val r = agent.getFileMeta(GetFileMetaRequest(code))
-        return (r.mime.ifEmpty { null }) to r.size.toLong()
+        return FileMeta(
+            contentType = r.mime.ifEmpty { null },
+            length = r.size.toLong(),
+            width = r.width,
+            height = r.height,
+            durationMs = r.durationMs,
+            thumbCode = r.thumbCode?.ifEmpty { null },
+            thumbhash = r.thumbhash?.ifEmpty { null },
+        )
     }
 
     override suspend fun messages(id: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {

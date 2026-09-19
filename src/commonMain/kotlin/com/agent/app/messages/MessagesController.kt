@@ -439,6 +439,25 @@ class MessagesController(
                 val tcId = (params["toolCallId"] ?: params["id"]) as? String ?: return
                 updateToolResult(tcId, null, errorMsg = "denied")
             }
+            "file", "reasoning-file" -> {
+                // A streamed media part the agent has already offloaded to the
+                // blob store; `code` is the file code. Render it as a file part
+                // (same path as a persisted file part) on the streaming bubble.
+                val code = params["code"] as? String
+                if (code.isNullOrEmpty()) return
+                val sid = ensureStreamingMsg(false)
+                val partId = "f$code"
+                setMsg(sid) { m ->
+                    if (m.parts.any { it.id == partId }) m
+                    else m.copy(
+                        parts = m.parts + ChatPart(
+                            id = partId, type = "file", code = code,
+                            name = params["name"] as? String,
+                            mime = (params["mediaType"] ?: params["mime"]) as? String,
+                        ),
+                    )
+                }
+            }
             "turn-complete" -> {
                 suppressRunContent = false
                 finishStreaming()

@@ -266,7 +266,7 @@ fun ChatScreen(store: AppStore) {
         else attachments.map { if (it.code == targetCode) pending else it }
         val job = scope.launch {
             try {
-                val done = store.api.uploadFile(src.name, src.mime, src.bytes)
+                val done = store.api.uploadFile(src.name, src.bytes)
                 attachments = attachments.map { if (it.code == pending.code) done else it }
             } catch (e: Exception) {
                 attachments = attachments.map {

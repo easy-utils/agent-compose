@@ -1,6 +1,7 @@
 package com.agent.app
 
 import com.agent.app.models.ChatMessage
+import com.agent.app.models.FileMeta
 import com.agent.app.models.MailboxEntry
 import com.agent.app.models.Message
 import com.agent.app.models.ModelInfo
@@ -29,9 +30,9 @@ interface AgentApi {
     suspend fun renameSession(id: String, name: String): Session?
     suspend fun prompt(id: String, prompt: String, attachments: List<String> = emptyList()): String
 
-    suspend fun uploadFile(name: String, mime: String, bytes: ByteArray): UploadedFile
+    suspend fun uploadFile(name: String, bytes: ByteArray): UploadedFile
     suspend fun fetchFileBytes(code: String): ByteArray
-    suspend fun fileHead(code: String): Pair<String?, Long>
+    suspend fun fileHead(code: String): FileMeta
 
     suspend fun messages(id: String, before: String? = null, limit: Int = 30): Pair<List<Message>, Boolean>
     suspend fun messagesAfter(id: String, after: String, limit: Int = 200): Triple<List<Message>, Boolean, String>
