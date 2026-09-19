@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Defense in depth: trust the private ingress CA (also installed in the
+         OkHttp TLS layer via AgentTls.kt). -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/agent_ca" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+# Static host for the Compose Multiplatform WEB (Wasm) build. Same shape as the
+# other web images, plus the COOP/COEP pair Compose/Wasm needs for
+# SharedArrayBuffer (the runtime falls back to the JS/Canvas path otherwise).
+ARG REGISTRY=forgejo.develop.10.199.64.20.nip.io
+FROM ${REGISTRY}/root/alpine:3.24
+RUN apk add --no-cache nginx \
+    && mkdir -p /run/nginx /usr/share/nginx/html
+
+COPY build/dist/wasmJs/productionExecutable /usr/share/nginx/html
+# sqlite-wasm is loaded AT RUNTIME from ./sqlite/ (see SqliteModule.kt). These
+# files MUST be served as-is (un-bundled) so the module's import.meta.url asset
+# resolution stays relative to the served path — do not let webpack touch them.
+COPY web/sqlite /usr/share/nginx/html/sqlite
+
+RUN printf 'server {\n\
+    listen       8080;\n\
+    server_name  localhost;\n\
+    root   /usr/share/nginx/html;\n\
+    index  index.html;\n\
+    add_header Cross-Origin-Opener-Policy "same-origin" always;\n\
+    add_header Cross-Origin-Embedder-Policy "require-corp" always;\n\
+    # The entry bundle (composeApp.js) and the un-hashed webpack chunks keep a\n\
+    # FIXED name while their contents change every build. Without an explicit\n\
+    # directive the browser heuristically caches them and keeps running a STALE\n\
+    # bundle after a redeploy (a PWA window makes this worse). Force\n\
+    # revalidation on every load; unchanged files still answer 304 cheaply.\n\
+    add_header Cache-Control "no-cache" always;\n\
+    # NOTE: no per-location add_header below — nginx replaces (never merges)\n\
+    # inherited headers, so adding one in a location that matches the DOCUMENT\n\
+    # would drop COOP/COEP and silently disable cross-origin isolation (no OPFS).\n\
+    location ~ \\.wasm$ { default_type application/wasm; try_files $uri =404; }\n\
+    location ~ \\.(png|svg|ico|js|webmanifest)$ { try_files $uri =404; }\n\
+    location ^~ /composeResources/ { try_files $uri =404; }\n\
+    # sqlite-wasm is loaded at RUNTIME. `mime.types` has no .mjs entry, so set it\n\
+    # explicitly or the browser rejects the module import (octet-stream).\n\
+    location /sqlite/ { try_files $uri =404; }\n\
+    location ~ \\.mjs$ { default_type text/javascript; try_files $uri =404; }\n\
+    location / { try_files $uri $uri/ /index.html; }\n\
+    location = /healthz { return 200 "{\\"ok\\":true,\\"name\\":\\"agent-compose\\"}"; add_header Content-Type application/json; }\n\
+}\n' > /etc/nginx/http.d/default.conf
+RUN sed -i 's|/var/log/nginx/access.log|/dev/stdout|' /etc/nginx/nginx.conf 2>/dev/null || true
+
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
