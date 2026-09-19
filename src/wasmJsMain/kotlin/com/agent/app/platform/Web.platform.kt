@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
 actual object Prefs {
     /** Where the connection form points by default (PREFILL only — no token is
      *  ever baked in, so the app always starts at the setup/backends flow). */
-    private const val DEFAULT_BASE = "https://standalone-agent.temp.10.199.64.20.nip.io"
+    private const val DEFAULT_BASE = "https://agent.temp.10.199.64.20.nip.io"
     private const val SEP = "\u0001"
 
     actual fun loadBase(): String = jsLocalGet("agent.baseUrl") ?: DEFAULT_BASE

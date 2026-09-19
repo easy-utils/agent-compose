@@ -35,7 +35,7 @@ private fun ctx(): Context = AndroidBridge.appContext
 
 /** Where the connection form points by default (PREFILL only — no token is
  *  baked in, so the app always starts at the setup/backends flow). */
-private const val DEFAULT_BASE = "https://standalone-agent.temp.10.199.64.20.nip.io"
+private const val DEFAULT_BASE = "https://agent.temp.10.199.64.20.nip.io"
 /** Field separator for the serialized backend list (US, 0x01). */
 private const val SEP = "\u0001"
 
