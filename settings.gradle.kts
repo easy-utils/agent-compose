@@ -18,15 +18,20 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-    }
-}
-
-// The generated easy-rpc client + pbandk messages live next door; consume the
-// SDK as a composite build (itself consuming easy-rpc-kotlin) so the whole
-// multiplatform stack resolves from local sources with no publish dance.
-includeBuild("../agent-sdk-kotlin") {
-    dependencySubstitution {
-        substitute(module("io.github.easy-utils:agent-sdk-kotlin")).using(project(":"))
+        maven {
+            url = uri("https://maven.pkg.github.com/easy-utils/agent-sdk-kotlin")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
+        maven {
+            url = uri("https://maven.pkg.github.com/easy-utils/easy-rpc-kotlin")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
 }
 

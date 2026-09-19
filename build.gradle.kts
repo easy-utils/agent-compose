@@ -19,6 +19,20 @@ version = "0.3.9"
 repositories {
     google()
     mavenCentral()
+    maven {
+        url = uri("https://maven.pkg.github.com/easy-utils/agent-sdk-kotlin")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR") ?: ""
+            password = System.getenv("GITHUB_TOKEN") ?: ""
+        }
+    }
+    maven {
+        url = uri("https://maven.pkg.github.com/easy-utils/easy-rpc-kotlin")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR") ?: ""
+            password = System.getenv("GITHUB_TOKEN") ?: ""
+        }
+    }
 }
 
 kotlin {
@@ -69,7 +83,7 @@ kotlin {
             dependencies {
                 // Typed agent client + pbandk messages over easy-rpc; `api`
                 // re-exports easy-rpc-kotlin (Transport/RPCError) and pbandk.
-                api("io.github.easy-utils:agent-sdk-kotlin:0.17.0")
+                api("io.github.easy-utils:agent-sdk-kotlin:0.18.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
                 implementation(compose.runtime)
                 implementation(compose.foundation)
