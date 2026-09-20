@@ -338,7 +338,7 @@ fun ChatScreen(store: AppStore) {
     /**
      * Hold-to-talk press. Asks for the microphone permission first (the
      * platform prompts on Android) and reports a denial instead of handing
-     * work to a MediaRecorder that would throw. Mirrors flutter's
+     * work to a recorder that would throw. Mirrors flutter's
      * VoiceRecorder.start() -> showToast(voicePermission).
      */
     fun beginRecording() {
