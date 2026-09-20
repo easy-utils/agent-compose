@@ -1,4 +1,4 @@
-# agent-compose-app
+# agent-compose
 
 Compose Multiplatform agent chat app. Shared Compose UI + the single
 `AgentApiImpl` in `commonMain` against the typed `agent-sdk-kotlin` client

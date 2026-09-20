@@ -35,7 +35,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "agent-compose-app"
+rootProject.name = "agent-compose"
 
 // The Android application shell is its own module because AGP 9 does not allow
 // `com.android.application` alongside the Kotlin Multiplatform plugin; the KMP
