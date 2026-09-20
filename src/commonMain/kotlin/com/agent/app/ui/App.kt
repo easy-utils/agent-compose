@@ -193,7 +193,12 @@ fun BackendsScreen(activeBase: String, onSwitch: (BackendCfg) -> Unit, onAdd: ()
                     )
                     Spacer(Modifier.width(AppSpacing.MD.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(b.name.ifEmpty { b.baseUrl }, style = AppText.body)
+                        // Prefer the resolved username (GetIdentity); fall back
+                        // to the stored name / host for legacy entries.
+                        Text(
+                            b.username.ifEmpty { b.name.ifEmpty { b.baseUrl } },
+                            style = AppText.body,
+                        )
                         Text(b.baseUrl, style = AppText.micro, color = colors.mutedForeground, maxLines = 1)
                     }
                     AppIcon(

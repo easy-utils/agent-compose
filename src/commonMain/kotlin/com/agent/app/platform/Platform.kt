@@ -29,6 +29,19 @@ expect class VoiceRecorder() {
     fun dispose()
 }
 
+/** The effective agent locale: the 'follow' pref resolves to the UI language
+ *  (zh for a Chinese UI, en otherwise), matching flutter's
+ *  `Prefs.effectiveAgentLocale`. Passed to ListPresets/ListTools so the server
+ *  resolves the localized prompt instead of falling back to English. */
+fun effectiveAgentLocale(): String {
+    val pref = Prefs.agentLocale()
+    return if (pref == "follow") {
+        if (com.agent.app.i18n.I18n.lang == com.agent.app.i18n.Lang.ZH) "zh" else "en"
+    } else {
+        pref
+    }
+}
+
 /** Opens a native multi-file picker; empty when cancelled. */
 expect suspend fun pickFiles(mimeFilter: String?): List<PickedFile>
 

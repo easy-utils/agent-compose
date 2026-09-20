@@ -35,7 +35,7 @@ private fun ctx(): Context = AndroidBridge.appContext
 
 /** Where the connection form points by default (PREFILL only — no token is
  *  baked in, so the app always starts at the setup/backends flow). */
-private const val DEFAULT_BASE = "https://agent.temp.10.199.64.20.nip.io"
+private const val DEFAULT_BASE = "https://agent.agent.10.199.64.20.nip.io"
 /** Field separator for the serialized backend list (US, 0x01). */
 private const val SEP = "\u0001"
 
@@ -92,18 +92,23 @@ actual object Prefs {
         val raw = sp().getString("backends", "") ?: return emptyList()
         return raw.split("\n").mapNotNull { l ->
             val p = l.split(SEP)
-            if (p.size == 3) BackendCfg(p[0], p[1], p[2]) else null
+            // 3 fields = legacy (no username); 4 = name/baseUrl/token/username.
+            when (p.size) {
+                3 -> BackendCfg(p[0], p[1], p[2])
+                4 -> BackendCfg(p[0], p[1], p[2], p[3])
+                else -> null
+            }
         }
     }
     actual fun upsertBackend(b: BackendCfg) {
         val list = backends().filter { !(it.baseUrl == b.baseUrl && it.token == b.token) } + b
-        sp().edit().putString("backends", list.joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}" }).apply()
+        sp().edit().putString("backends", list.joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}$SEP${it.username}" }).apply()
     }
     actual fun removeBackend(b: BackendCfg) {
         sp().edit().putString(
             "backends",
             backends().filter { !(it.baseUrl == b.baseUrl && it.token == b.token) }
-                .joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}" },
+                .joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}$SEP${it.username}" },
         ).apply()
     }
 }

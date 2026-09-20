@@ -4,6 +4,7 @@ import com.agent.app.models.MailboxEntry
 import com.agent.app.models.Message
 import com.agent.app.models.MessagePart
 import com.agent.app.models.FileMeta
+import com.agent.app.models.Identity
 import com.agent.app.models.ModelInfo
 import com.agent.app.models.ModelVariantInfo
 import com.agent.app.models.Preset
@@ -29,6 +30,7 @@ import agent.v1.ForkRequest
 import agent.v1.GetConfigRequest
 import agent.v1.GetFileMetaRequest
 import agent.v1.GetFileRequest
+import agent.v1.GetIdentityRequest
 import agent.v1.GetSessionRequest
 import agent.v1.GetToolConfigRequest
 import agent.v1.IngestFileRequest
@@ -224,6 +226,11 @@ class AgentApiImpl private constructor(
     override suspend fun listSessions(): List<Session> =
         agent.listSessions(ListSessionsRequest()).sessions.map(::sessionFromPb)
 
+    override suspend fun identity(): Identity {
+        val r = agent.getIdentity(GetIdentityRequest())
+        return Identity(tenant = r.tenant, tenantName = r.tenantName, role = r.role)
+    }
+
     override suspend fun createSession(params: Map<String, Any?>): Session {
         val r = agent.createSession(
             CreateSessionRequest(
@@ -299,16 +306,17 @@ class AgentApiImpl private constructor(
     }
 
     override suspend fun settings(id: String, settings: Map<String, Any?>): Session? {
-        val maxTurns = (settings["max_turns"] as? Int)?.takeIf { it > 0 }
+        // Only model / preset / locale / variant are client-editable (proto
+        // v0.18 dropped max_turns/system_prompt/group from UpdateSettingsRequest;
+        // those are governed by the preset). Empty model/preset mean "leave
+        // unchanged"; locale/variant use '' to clear an override.
         return agent.updateSettings(
             UpdateSettingsRequest(
                 id = id,
                 model = (settings["model"] as? String) ?: "",
                 preset = (settings["preset"] as? String) ?: "",
-                systemPrompt = settings["system_prompt"] as? String ?: "",
-                locale = settings["locale"] as? String ?: "",
-                variant = settings["variant"] as? String ?: "",
-                maxTurns = maxTurns,
+                locale = (settings["locale"] as? String) ?: "",
+                variant = (settings["variant"] as? String) ?: "",
             ),
         ).session?.let(::sessionFromPb)
     }

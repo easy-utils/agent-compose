@@ -20,7 +20,7 @@ import kotlinx.serialization.json.JsonPrimitive
 actual object Prefs {
     /** Where the connection form points by default (PREFILL only — no token is
      *  ever baked in, so the app always starts at the setup/backends flow). */
-    private const val DEFAULT_BASE = "https://agent.temp.10.199.64.20.nip.io"
+    private const val DEFAULT_BASE = "https://agent.agent.10.199.64.20.nip.io"
     private const val SEP = "\u0001"
 
     actual fun loadBase(): String = jsLocalGet("agent.baseUrl") ?: DEFAULT_BASE
@@ -75,18 +75,23 @@ actual object Prefs {
         val raw = jsLocalGet("agent.backends") ?: return emptyList()
         return raw.split("\n").mapNotNull {
             val p = it.split(SEP)
-            if (p.size == 3) BackendCfg(p[0], p[1], p[2]) else null
+            // 3 fields = legacy (no username); 4 = name/baseUrl/token/username.
+            when (p.size) {
+                3 -> BackendCfg(p[0], p[1], p[2])
+                4 -> BackendCfg(p[0], p[1], p[2], p[3])
+                else -> null
+            }
         }
     }
     actual fun upsertBackend(b: BackendCfg) {
         val list = backends().filter { !(it.baseUrl == b.baseUrl && it.token == b.token) } + b
-        jsLocalSet("agent.backends", list.joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}" })
+        jsLocalSet("agent.backends", list.joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}$SEP${it.username}" })
     }
     actual fun removeBackend(b: BackendCfg) {
         jsLocalSet(
             "agent.backends",
             backends().filter { !(it.baseUrl == b.baseUrl && it.token == b.token) }
-                .joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}" },
+                .joinToString("\n") { "${it.name}$SEP${it.baseUrl}$SEP${it.token}$SEP${it.username}" },
         )
     }
 }

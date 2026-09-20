@@ -272,7 +272,21 @@ data class BackendCfg(
     val name: String,
     val baseUrl: String,
     val token: String,
+    /** Human username (tenant name) resolved from the token via
+     *  AgentService.GetIdentity at connect/switch time. Empty for legacy. */
+    val username: String = "",
 )
+
+/** The caller's resolved identity (from its bearer token). */
+data class Identity(
+    val tenant: String = "",
+    val tenantName: String = "",
+    val role: String = "",
+) {
+    /** Display name: the human tenant name, falling back to the id. */
+    val displayName: String get() = tenantName.ifEmpty { tenant }
+    val isAdmin: Boolean get() = role == "admin"
+}
 
 fun backendNameFor(baseUrl: String): String {
     // Extract the host without java.net (works on every KMP target).

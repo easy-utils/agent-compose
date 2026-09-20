@@ -76,6 +76,7 @@ import com.agent.app.models.UploadedFile
 import com.agent.app.platform.PickedFile
 import com.agent.app.platform.VoiceRecorder
 import com.agent.app.platform.copyToClipboard
+import com.agent.app.platform.effectiveAgentLocale
 import com.agent.app.platform.pickFiles
 import com.agent.app.platform.takePhoto
 import com.agent.app.store.AppStore
@@ -120,7 +121,7 @@ fun ChatScreen(store: AppStore) {
         } catch (_: Exception) {
         }
         try {
-            presets = store.api.presets()
+            presets = store.api.presets(effectiveAgentLocale())
         } catch (_: Exception) {
         }
     }

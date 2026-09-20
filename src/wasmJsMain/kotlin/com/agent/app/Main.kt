@@ -100,14 +100,26 @@ fun main() {
                     Prefs.save(b.baseUrl, b.token)
                     Prefs.upsertBackend(b)
                     boot()
+                    // Refresh the cached username (older entries may predate
+                    // GetIdentity, or the tenant name may have changed).
+                    scope.launch {
+                        val name = AgentApiImpl.create(b.baseUrl, b.token).resolveUsername()
+                        if (name.isNotEmpty()) Prefs.upsertBackend(b.copy(username = name, name = name))
+                    }
                 },
                 onConnect = { base, token, done ->
                     scope.launch {
                         try {
                             val api = AgentApiImpl.create(base, token)
                             api.listSessions()
+                            val username = api.resolveUsername()
                             Prefs.save(base, token)
-                            Prefs.upsertBackend(BackendCfg(backendNameFor(base), base, token))
+                            Prefs.upsertBackend(BackendCfg(
+                                name = username.ifEmpty { backendNameFor(base) },
+                                baseUrl = base,
+                                token = token,
+                                username = username,
+                            ))
                             Prefs.setReadScope(scopeOf(base, token))
                             val local = try {
                                 com.agent.app.platform.openLocalStore(scopeOf(base, token))

@@ -2,6 +2,7 @@ package com.agent.app
 
 import com.agent.app.models.ChatMessage
 import com.agent.app.models.FileMeta
+import com.agent.app.models.Identity
 import com.agent.app.models.MailboxEntry
 import com.agent.app.models.Message
 import com.agent.app.models.ModelInfo
@@ -24,6 +25,8 @@ interface AgentApi {
     val token: String
 
     suspend fun listSessions(): List<Session>
+    /** The caller's resolved identity (tenant id/name + role), from the token. */
+    suspend fun identity(): Identity
     suspend fun createSession(params: Map<String, Any?>): Session
     suspend fun getSession(id: String): Session?
     suspend fun deleteSession(id: String)
@@ -64,6 +67,14 @@ interface AgentApi {
     suspend fun config(key: String): String
     suspend fun toolConfig(): Map<String, Any?>
 }
+
+/** Best-effort: resolve the token's username via GetIdentity. '' on failure. */
+suspend fun AgentApi.resolveUsername(): String =
+    try {
+        identity().displayName
+    } catch (_: Exception) {
+        ""
+    }
 
 /** Map server history messages to chat-domain bubbles (pure domain logic). */
 fun mapMessagesToChat(msgs: List<Message>): List<ChatMessage> = msgs.mapIndexed { i, m ->

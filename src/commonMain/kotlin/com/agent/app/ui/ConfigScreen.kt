@@ -35,6 +35,7 @@ import com.agent.app.models.Preset
 import com.agent.app.models.ToolConfig
 import com.agent.app.models.ToolInfo
 import com.agent.app.platform.Prefs
+import com.agent.app.platform.effectiveAgentLocale
 import com.agent.app.store.AppPage
 import com.agent.app.store.AppStore
 import kotlinx.coroutines.launch
@@ -251,7 +252,11 @@ private fun ConfigBackendsDetail(
                 )
                 Spacer(Modifier.width(AppSpacing.MD.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(b.name.ifEmpty { b.baseUrl }, style = AppText.body)
+                    // Prefer the resolved username (GetIdentity).
+                    Text(
+                        b.username.ifEmpty { b.name.ifEmpty { b.baseUrl } },
+                        style = AppText.body,
+                    )
                     Text(b.baseUrl, style = AppText.micro, color = colors.mutedForeground, maxLines = 1)
                 }
                 AppIcon(
@@ -307,7 +312,7 @@ private fun ConfigPresetsDetail(store: AppStore) {
 
     LaunchedEffect(Unit) {
         try {
-            presets = store.api.presets()
+            presets = store.api.presets(effectiveAgentLocale())
         } catch (_: Exception) {
         }
         try {
@@ -401,7 +406,7 @@ private fun ConfigPresetsDetail(store: AppStore) {
                 scope.launch {
                     try {
                         store.api.savePreset(Preset(id, prompt, tools, turns))
-                        presets = store.api.presets()
+                        presets = store.api.presets(effectiveAgentLocale())
                         toast = t("saved")
                     } catch (_: Exception) {
                     }
@@ -421,7 +426,7 @@ private fun ConfigPresetsDetail(store: AppStore) {
                 scope.launch {
                     try {
                         store.api.deletePreset(p.id)
-                        presets = store.api.presets()
+                        presets = store.api.presets(effectiveAgentLocale())
                     } catch (_: Exception) {
                     }
                 }
@@ -519,7 +524,7 @@ private fun ConfigToolsDetail(store: AppStore) {
 
     LaunchedEffect(Unit) {
         try {
-            tools = store.api.tools(Prefs.agentLocale().takeIf { it != "follow" })
+            tools = store.api.tools(effectiveAgentLocale())
         } catch (_: Exception) {
         }
         try {
