@@ -570,7 +570,7 @@ actual class VoiceRecorder actual constructor() {
             )
             if (minBuf <= 0) return@withContext false
             val r = android.media.AudioRecord(
-                android.media.MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.MIC,
                 VOICE_RATE, VOICE_CHANNEL, VOICE_ENCODING,
                 minBuf * 2,
             )
