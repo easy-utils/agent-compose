@@ -56,7 +56,7 @@ actual class VoiceRecorder actual constructor() {
         thread = null
         val pcm = buf.toByteArray()
         if (pcm.isEmpty()) return@withContext null
-        val wav = pcmToWav(pcm, 16_000f, 16, 1)
+        val wav = pcm16ToWav(pcm, 16_000, 16, 1)
         val name = "voice-${System.currentTimeMillis()}.wav"
         val tmp = File.createTempFile("voice", ".wav").apply {
             writeBytes(wav)
@@ -78,23 +78,6 @@ actual class VoiceRecorder actual constructor() {
     actual fun dispose() {
         line = null
     }
-}
-
-private fun pcmToWav(pcm: ByteArray, rate: Float, bits: Int, channels: Int): ByteArray {
-    val byteRate = (rate * bits * channels / 8).toInt()
-    val out = java.io.ByteArrayOutputStream(44 + pcm.size)
-    fun le16(v: Int) = out.write(byteArrayOf((v and 0xff).toByte(), ((v shr 8) and 0xff).toByte()))
-    fun le32(v: Int) = out.write(
-        byteArrayOf(
-            (v and 0xff).toByte(), ((v shr 8) and 0xff).toByte(),
-            ((v shr 16) and 0xff).toByte(), ((v shr 24) and 0xff).toByte(),
-        ),
-    )
-    out.write("RIFF".toByteArray()); le32(36 + pcm.size); out.write("WAVE".toByteArray())
-    out.write("fmt ".toByteArray()); le32(16); le16(1); le16(channels)
-    le32(rate.toInt()); le32(byteRate); le16(bits * channels / 8); le16(bits)
-    out.write("data".toByteArray()); le32(pcm.size); out.write(pcm)
-    return out.toByteArray()
 }
 
 /** Desktop has no camera contract (flutter's image_picker has none either). */

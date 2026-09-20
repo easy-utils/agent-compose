@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 
-// Android actuals — SharedPreferences + framework SQLite + MediaRecorder +
+// Android actuals — SharedPreferences + framework SQLite + AudioRecord (WAV) +
 // ACTION_OPEN_DOCUMENT via the activity bridge.
 
 object AndroidBridge {
@@ -523,8 +523,12 @@ internal object DesktopJson {
 // ---- voice ----
 
 actual class VoiceRecorder actual constructor() {
-    private var recorder: MediaRecorder? = null
-    private var file: File? = null
+    // Raw 16 kHz mono 16-bit PCM via AudioRecord, encoded to WAV on stop.
+    // MediaRecorder was deliberately dropped: it only yields m4a/AAC (or
+    // webm/opus), and the ASR gateway wants WAV (matching Flutter + webui).
+    private var record: android.media.AudioRecord? = null
+    private var thread: Thread? = null
+    private val buf = java.io.ByteArrayOutputStream()
 
     private val recordPermission = android.Manifest.permission.RECORD_AUDIO
 
@@ -561,17 +565,29 @@ actual class VoiceRecorder actual constructor() {
             return@withContext false
         }
         try {
-            @Suppress("DEPRECATION")
-            val r = MediaRecorder()
-            val f = File.createTempFile("voice", ".m4a", ctx().cacheDir)
-            r.setAudioSource(MediaRecorder.AudioSource.MIC)
-            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            r.setOutputFile(f.absolutePath)
-            r.prepare()
-            r.start()
-            recorder = r
-            file = f
+            val minBuf = android.media.AudioRecord.getMinBufferSize(
+                VOICE_RATE, VOICE_CHANNEL, VOICE_ENCODING,
+            )
+            if (minBuf <= 0) return@withContext false
+            val r = android.media.AudioRecord(
+                android.media.MediaRecorder.AudioSource.MIC,
+                VOICE_RATE, VOICE_CHANNEL, VOICE_ENCODING,
+                minBuf * 2,
+            )
+            if (r.state != android.media.AudioRecord.STATE_INITIALIZED) {
+                r.release()
+                return@withContext false
+            }
+            r.startRecording()
+            record = r
+            buf.reset()
+            thread = Thread {
+                val chunk = ByteArray(4096)
+                while (record === r) {
+                    val n = r.read(chunk, 0, chunk.size)
+                    if (n > 0) buf.write(chunk, 0, n)
+                }
+            }.also { it.isDaemon = true; it.start() }
             true
         } catch (_: Exception) {
             false
@@ -579,36 +595,49 @@ actual class VoiceRecorder actual constructor() {
     }
 
     actual suspend fun stop(): PickedFile? = withContext(Dispatchers.IO) {
-        val r = recorder ?: return@withContext null
-        recorder = null
+        val r = record ?: return@withContext null
+        record = null
         try {
             r.stop()
         } catch (_: Exception) {
         }
         r.release()
-        val f = file ?: return@withContext null
-        file = null
-        if (f.length() == 0L) return@withContext null
-        PickedFile(f.name, "audio/mp4", f.readBytes(), f.absolutePath)
+        thread?.join(500)
+        thread = null
+        val pcm = buf.toByteArray()
+        buf.reset()
+        // Under ~0.4s of 16kHz mono 16-bit ≈ 12.8KB — an accidental tap.
+        if (pcm.size < VOICE_MIN_BYTES) return@withContext null
+        val wav = pcm16ToWav(pcm, VOICE_RATE, 16, 1)
+        val name = "voice-${System.currentTimeMillis()}.wav"
+        val tmp = File.createTempFile("voice", ".wav", ctx().cacheDir).apply { writeBytes(wav) }
+        PickedFile(name, "audio/wav", wav, tmp.absolutePath)
     }
 
     actual suspend fun cancel() {
-        val r = recorder ?: return
-        recorder = null
+        val r = record ?: return
+        record = null
         try {
             r.stop()
         } catch (_: Exception) {
         }
         r.release()
-        file?.delete()
-        file = null
+        thread?.join(200)
+        thread = null
+        buf.reset()
     }
 
     actual fun dispose() {
-        recorder?.release()
-        recorder = null
+        record?.release()
+        record = null
     }
 }
+
+private const val VOICE_RATE = 16000
+private const val VOICE_CHANNEL = android.media.AudioFormat.CHANNEL_IN_MONO
+private const val VOICE_ENCODING = android.media.AudioFormat.ENCODING_PCM_16BIT
+/** Minimum PCM payload (bytes) ≈ 0.4s at 16kHz mono 16-bit (matches Flutter/webui). */
+private const val VOICE_MIN_BYTES = VOICE_RATE * 2 * 4 / 10
 
 // ---- file picking (ACTION_OPEN_DOCUMENT through the activity bridge) ----
 

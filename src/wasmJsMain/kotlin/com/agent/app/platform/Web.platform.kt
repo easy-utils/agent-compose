@@ -137,12 +137,30 @@ actual class VoiceRecorder actual constructor() {
     actual suspend fun stop(): PickedFile? =
         kotlin.coroutines.suspendCoroutine { cont ->
             jsVoiceStop { b64 ->
-                if (b64 == null) cont.resume(null)
-                else cont.resume(
+                if (b64 == null) {
+                    cont.resume(null)
+                    return@jsVoiceStop
+                }
+                // The JS side hands back raw little-endian Float32 mono PCM.
+                val raw = decodeB64(b64)
+                val samples = FloatArray(raw.size / 4) { i ->
+                    val b = i * 4
+                    val bits = (raw[b].toInt() and 0xff) or
+                        ((raw[b + 1].toInt() and 0xff) shl 8) or
+                        ((raw[b + 2].toInt() and 0xff) shl 16) or
+                        ((raw[b + 3].toInt() and 0xff) shl 24)
+                    Float.fromBits(bits)
+                }
+                // Under ~0.4s of 16kHz mono 16-bit ≈ 12.8KB — an accidental tap.
+                if (samples.size * 2 < 12800) {
+                    cont.resume(null)
+                    return@jsVoiceStop
+                }
+                cont.resume(
                     PickedFile(
-                        "voice-${com.agent.app.util.nowMillis()}.webm",
-                        "audio/webm",
-                        decodeB64(b64),
+                        "voice-${com.agent.app.util.nowMillis()}.wav",
+                        "audio/wav",
+                        floatToWavPcm16(samples, 16000),
                     ),
                 )
             }

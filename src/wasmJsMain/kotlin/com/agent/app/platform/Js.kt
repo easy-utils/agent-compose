@@ -84,45 +84,75 @@ external fun jsEncodeURIComponent(s: String): String
 )
 external fun jsPickFiles(mime: String?, cb: (String) -> Unit)
 
-// ---- voice recording (MediaRecorder) ----
+// ---- voice recording (Web Audio -> raw Float32 PCM) ----
+//
+// MediaRecorder is deliberately NOT used: it only yields WebM/Opus (Chrome) or
+// MP4/AAC (Safari), and the ASR gateway rejects WebM outright (a WebM container
+// even sniffs as `video/webm`). Instead we capture mono PCM with an AudioWorklet
+// (ScriptProcessor fallback) at 16 kHz and hand the raw Float32 frames back to
+// Kotlin, which encodes the WAV — matching Flutter's recorder.
 
 @JsFun(
     """
 (cb) => {
-  if (!navigator.mediaDevices || !window.MediaRecorder) { cb(false); return; }
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
-    const chunks = [];
-    const r = new MediaRecorder(s);
-    window.__voice = { rec: r, stream: s, chunks: chunks };
-    r.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    r.start();
-    cb(true);
+  if (!navigator.mediaDevices) { cb(false); return; }
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) { cb(false); return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(async s => {
+    try {
+      const ctx = new Ctor({ sampleRate: 16000 });
+      if (ctx.state === 'suspended') await ctx.resume();
+      const source = ctx.createMediaStreamSource(s);
+      const frames = [];
+      const v = { stream: s, ctx: ctx, source: source, frames: frames, worklet: null, processor: null };
+      window.__voice = v;
+      try {
+        if (!ctx.audioWorklet) throw new Error('no AudioWorklet');
+        const src = "class AbcpRecProcessor extends AudioWorkletProcessor { process(inputs){ const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage(ch.slice(0)); return true; } } registerProcessor('abcp-rec', AbcpRecProcessor);";
+        const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+        await ctx.audioWorklet.addModule(url);
+        const node = new AudioWorkletNode(ctx, 'abcp-rec');
+        node.port.onmessage = e => { if (window.__voice === v) frames.push(e.data); };
+        source.connect(node);
+        const mute = ctx.createGain(); mute.gain.value = 0;
+        node.connect(mute).connect(ctx.destination);
+        v.worklet = node;
+      } catch (err) {
+        const node = ctx.createScriptProcessor(4096, 1, 1);
+        node.onaudioprocess = ev => { if (window.__voice === v) frames.push(new Float32Array(ev.inputBuffer.getChannelData(0))); };
+        const mute = ctx.createGain(); mute.gain.value = 0;
+        source.connect(node); node.connect(mute).connect(ctx.destination);
+        v.processor = node;
+      }
+      cb(true);
+    } catch (err) { cb(false); }
   }).catch(e => cb(false));
 }
 """,
 )
 external fun jsVoiceStart(cb: (Boolean) -> Unit)
 
+/** Stop and return the captured mono Float32 PCM, base64-encoded (LE bytes). */
 @JsFun(
     """
 (cb) => {
   const v = window.__voice;
   if (!v) { cb(null); return; }
-  v.rec.onstop = () => {
-    try { v.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
-    const blob = new Blob(v.chunks, { type: 'audio/webm' });
-    if (blob.size === 0) { cb(null); return; }
-    const fr = new FileReader();
-    fr.onload = () => {
-      const u8 = new Uint8Array(fr.result);
-      let bin = '';
-      const CH = 0x8000;
-      for (let k = 0; k < u8.length; k += CH) bin += String.fromCharCode.apply(null, u8.subarray(k, k + CH));
-      cb(btoa(bin));
-    };
-    fr.readAsArrayBuffer(blob);
-  };
-  if (v.rec.state !== 'inactive') v.rec.stop(); else v.rec.onstop();
+  window.__voice = null;
+  try { v.worklet && v.worklet.port.close(); } catch(e) {}
+  try { v.processor && v.processor.disconnect(); } catch(e) {}
+  try { v.worklet && v.worklet.disconnect(); } catch(e) {}
+  try { v.source && v.source.disconnect(); } catch(e) {}
+  try { v.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
+  try { v.ctx.close(); } catch(e) {}
+  const frames = v.frames;
+  let n = 0; for (const f of frames) n += f.length;
+  const pcm = new Float32Array(n);
+  let o = 0; for (const f of frames) { pcm.set(f, o); o += f.length; }
+  const u8 = new Uint8Array(pcm.buffer);
+  let bin = ''; const CH = 0x8000;
+  for (let k = 0; k < u8.length; k += CH) bin += String.fromCharCode.apply(null, u8.subarray(k, k + CH));
+  cb(btoa(bin));
 }
 """,
 )
@@ -133,9 +163,13 @@ external fun jsVoiceStop(cb: (String?) -> Unit)
 () => {
   const v = window.__voice;
   if (!v) return;
-  try { if (v.rec.state !== 'inactive') v.rec.stop(); } catch(e) {}
-  try { v.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
   window.__voice = null;
+  try { v.worklet && v.worklet.port.close(); } catch(e) {}
+  try { v.processor && v.processor.disconnect(); } catch(e) {}
+  try { v.worklet && v.worklet.disconnect(); } catch(e) {}
+  try { v.source && v.source.disconnect(); } catch(e) {}
+  try { v.stream.getTracks().forEach(t => t.stop()); } catch(e) {}
+  try { v.ctx.close(); } catch(e) {}
 }
 """,
 )
