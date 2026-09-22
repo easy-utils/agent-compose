@@ -65,6 +65,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.agent.app.messages.MessagesController
 import com.agent.app.i18n.I18n.t
 import com.agent.app.models.ChatMessage
@@ -491,7 +492,7 @@ fun ChatScreen(store: AppStore) {
                         }
                     }
                     items(ctrl.sorted, key = { it.id }) { msg ->
-                        MessageBubble(msg = msg, api = store.api, onUndo = { scope.launch { ctrl.revert(msg.id) } }, onResend = { scope.launch { ctrl.resendFrom(msg, it) } }, onOpenMedia = { viewerFor = it })
+                        MessageBubble(msg = msg, api = store.api, onUndo = { scope.launch { ctrl.revert(msg.id) } }, onResend = { scope.launch { ctrl.resendFrom(msg, it) } }, onOpenMedia = { viewerFor = it }, sessionId = store.activeSessionId ?: "", onOpenSession = { store.pickSession(it) }, sessionExists = { name -> store.sessions.any { s -> s.id == name } })
                     }
                 }
             }
@@ -906,6 +907,32 @@ fun SimpleDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 
 // ---- message bubble ----
 
+/** Provenance chip shown inside a bubble whose message came from another
+ *  session (`session:{name}`) or automation (`system:{name}`). */
+@Composable
+fun SourceChip(isSession: Boolean, name: String, canOpen: Boolean, onOpen: () -> Unit) {
+    val colors = LocalAppColors.current
+    val fg = if (isSession) Color(0xFF0284C7) else Color(0xFF7C3AED)
+    val bg = if (isSession) Color(0x260EA5E9) else Color(0x268B5CF6)
+    val label = if (isSession) t("mailboxFromSession") else t("mailboxFromSystem")
+    val chip = Row(
+        Modifier.background(bg, RoundedCornerShape(10.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (isSession) AppIcons.chat else AppIcons.bolt,
+            contentDescription = null, tint = fg, modifier = Modifier.size(12.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = AppText.micro.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold), color = fg)
+        if (name.isNotEmpty()) {
+            Text(" · $name", style = AppText.micro.copy(fontSize = 10.sp), color = fg.copy(alpha = 0.8f))
+        }
+    }
+    if (canOpen) Box(Modifier.appClickable(shape = RoundedCornerShape(10.dp)) { onOpen() }) { chip } else chip
+}
+
 @Composable
 fun MessageBubble(
     msg: ChatMessage,
@@ -913,12 +940,37 @@ fun MessageBubble(
     onUndo: () -> Unit,
     onResend: (String) -> Unit,
     onOpenMedia: (com.agent.app.models.AttachmentRef) -> Unit = {},
+    sessionId: String = "",
+    onOpenSession: (String) -> Unit = {},
+    sessionExists: (String) -> Boolean = { true },
 ) {
     val colors = LocalAppColors.current
-    val isUser = msg.role == "user"
+    val isRoleUser = msg.role == "user"
     val isError = msg.role == "error"
-    val isSystem = msg.role == "system" || msg.role == "event"
+    val isRoleSystem = msg.role == "system" || msg.role == "event"
     val isStreaming = msg.status == "streaming"
+    val isSending = msg.status == "pending"
+    // Message ORIGIN (msg.source): '' (agent/legacy user) | 'user' | 'session:X'
+    // | 'system:X'. A `session:X` message is INCOMING (left, sender avatar) even
+    // though role is `user`; `system:X` renders as a centred notice. Only the
+    // reader's OWN prompt stays right-aligned, with NO avatar (left only).
+    val sourceKind = when {
+        msg.source.startsWith("session:") -> "session"
+        msg.source.startsWith("system:") -> "system"
+        msg.source.isEmpty() || msg.source == "user" -> "user"
+        else -> "other"
+    }
+    val sourceName = when (sourceKind) {
+        "session" -> msg.source.removePrefix("session:")
+        "system" -> msg.source.removePrefix("system:")
+        else -> ""
+    }
+    val isSystem = isRoleSystem || sourceKind == "system"
+    val isUser = isRoleUser && sourceKind != "session"
+    val incoming = !isUser && !isSystem
+    val canOpenSession = sourceKind == "session" && sessionExists(sourceName)
+    val avatarSeed = if (sourceKind == "session") sourceName else sessionId.ifEmpty { "assistant" }
+    val showAvatar = incoming && !isError && !isSending
 
     val ordered = remember(msg.parts) {
         msg.parts.filter { it.type == "reasoning" } + msg.parts.filter { it.type != "reasoning" }
@@ -946,39 +998,73 @@ fun MessageBubble(
                 Text(t("thinking"), style = AppText.micro, color = colors.mutedForeground)
             }
         } else {
-            // The bubble HUGS its content (no width cap) — flutter only wraps at
-            // the available width, it never pins a 92% block.
-            Column(
-                Modifier
-                    // Right-click (desktop) / long-press off text (touch) opens
-                    // the action sheet. Text itself is wrapped in a
-                    // SelectionContainer below, so drag/long-press ON text does
-                    // native selection instead (matches webui/SwiftUI).
-                    .bubbleMenuGestures { bubbleActions = true }
-                    .background(
-                        when {
-                            isError -> colors.destructive.copy(alpha = 0.10f)
-                            isSystem -> colors.muted.copy(alpha = 0.30f)
-                            isUser -> colors.primary.copy(alpha = 0.12f)
-                            else -> colors.card
-                        },
-                        AppRadius.md,
-                    )
-                    .border(
-                        1.dp,
-                        when {
-                            isError -> colors.destructive.copy(alpha = 0.4f)
-                            isSystem -> colors.mutedForeground.copy(alpha = 0.25f)
-                            isUser -> colors.primary.copy(alpha = 0.4f)
-                            else -> colors.border.copy(alpha = 0.5f)
-                        },
-                        AppRadius.md,
-                    )
-                    .padding(horizontal = AppSpacing.MD.dp, vertical = AppSpacing.SM.dp + 2.dp),
-            ) {
+            // Avatars live ABOVE the bubble, flush to the left edge: the
+            // assistant reply and a session hand-off each show a 28px avatar on
+            // its own row above the bubble; the reader's OWN prompt has none.
+            if (showAvatar) {
+                Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val avatar: @Composable () -> Unit = {
+                        ChatAvatar(seed = avatarSeed, radius = 14.dp)
+                    }
+                    if (canOpenSession) {
+                        Box(Modifier.appClickable(shape = CircleShape) { onOpenSession(sourceName) }) { avatar() }
+                    } else {
+                        avatar()
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Sending row: the spinner sits to the LEFT of the user bubble
+                // while the backend has not yet confirmed the write.
+                if (isSending) {
+                    CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = colors.mutedForeground)
+                    Spacer(Modifier.width(AppSpacing.SM.dp))
+                }
+                // The bubble HUGS its content (no width cap) — flutter only wraps
+                // at the available width, it never pins a 92% block.
+                Column(
+                    Modifier
+                        // Right-click (desktop) / long-press off text (touch)
+                        // opens the action sheet. Text is wrapped in a
+                        // SelectionContainer below, so drag/long-press ON text
+                        // does native selection (matches webui/SwiftUI).
+                        .bubbleMenuGestures { bubbleActions = true }
+                        .background(
+                            when {
+                                isError -> colors.destructive.copy(alpha = 0.10f)
+                                isSystem -> colors.muted.copy(alpha = 0.30f)
+                                isUser -> colors.primary.copy(alpha = 0.12f)
+                                sourceKind == "session" -> Color(0x1A0EA5E9)
+                                else -> colors.card
+                            },
+                            AppRadius.md,
+                        )
+                        .border(
+                            1.dp,
+                            when {
+                                isError -> colors.destructive.copy(alpha = 0.4f)
+                                isSystem -> colors.mutedForeground.copy(alpha = 0.25f)
+                                isUser -> colors.primary.copy(alpha = 0.4f)
+                                sourceKind == "session" -> Color(0x660EA5E9)
+                                else -> colors.border.copy(alpha = 0.5f)
+                            },
+                            AppRadius.md,
+                        )
+                        .padding(horizontal = AppSpacing.MD.dp, vertical = AppSpacing.SM.dp + 2.dp),
+                ) {
                 if (isError) {
                     Text(t("error"), style = AppText.micro.copy(fontWeight = FontWeight.SemiBold), color = colors.destructive)
                     Spacer(Modifier.height(4.dp))
+                }
+                // Source chip: "来自会话 · {name}" / "来自系统 · {name}".
+                if (sourceKind == "session" || sourceKind == "system") {
+                    SourceChip(
+                        isSession = sourceKind == "session",
+                        name = sourceName,
+                        canOpen = canOpenSession,
+                        onOpen = { onOpenSession(sourceName) },
+                    )
+                    Spacer(Modifier.height(AppSpacing.SM.dp))
                 }
                 // Native text selection (drag-select on desktop/web, long-press
                 // handles on touch) — identical to flutter's `selectable: true`.
@@ -1003,6 +1089,7 @@ fun MessageBubble(
                         }
                     }
                 }
+                } // Row (sending spinner + bubble)
             }
             if (!isStreaming && !isSystem) {
                 Row(

@@ -1,6 +1,7 @@
 package com.agent.app
 
 import com.agent.app.models.MailboxEntry
+import com.agent.app.models.MailboxPage
 import com.agent.app.models.Message
 import com.agent.app.models.MessagePart
 import com.agent.app.models.FileMeta
@@ -188,7 +189,7 @@ fun messageFromPb(m: agent.v1.Message): Message {
             }
         }
     }
-    return Message(id = m.id, role = m.role, parts = parts, createdAt = m.createdAt.ifEmpty { null }, prevId = m.prevId)
+    return Message(id = m.id, role = m.role, parts = parts, createdAt = m.createdAt.ifEmpty { null }, prevId = m.prevId, source = m.source)
 }
 
 private fun decodeJson(data: String): Map<String, Any?> {
@@ -339,14 +340,20 @@ class AgentApiImpl private constructor(
         return ((st["status"] as? String) ?: "idle") to ((st["parts"] as? List<Any?>) ?: emptyList())
     }
 
-    override suspend fun mailbox(id: String): List<MailboxEntry> =
-        agent.mailbox(MailboxRequest(id)).mailbox.map { m ->
-            MailboxEntry(
-                id = m.id, msgType = m.msgType, payload = m.payload,
-                effectiveAt = m.effectiveAt.ifEmpty { null }, status = m.status,
-                createdAt = m.createdAt, consumedAt = m.consumedAt.ifEmpty { null },
-            )
-        }
+    override suspend fun mailbox(id: String, before: String, limit: Int): MailboxPage {
+        val r = agent.mailbox(MailboxRequest(id = id, before = before, limit = limit))
+        return MailboxPage(
+            hasMore = r.hasMore,
+            entries = r.mailbox.map { m ->
+                MailboxEntry(
+                    id = m.id, msgType = m.msgType, payload = m.payload,
+                    effectiveAt = m.effectiveAt.ifEmpty { null }, status = m.status,
+                    createdAt = m.createdAt, consumedAt = m.consumedAt.ifEmpty { null },
+                    source = m.source,
+                )
+            },
+        )
+    }
 
     override fun streamEvents(sessionId: String, since: String): Flow<StreamEvent> = flow {
         agent.watchSession(WatchSessionRequest(id = sessionId, since = since)).collect { e ->

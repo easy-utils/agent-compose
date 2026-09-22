@@ -4,6 +4,7 @@ import com.agent.app.models.ChatMessage
 import com.agent.app.models.FileMeta
 import com.agent.app.models.Identity
 import com.agent.app.models.MailboxEntry
+import com.agent.app.models.MailboxPage
 import com.agent.app.models.Message
 import com.agent.app.models.ModelInfo
 import com.agent.app.models.Preset
@@ -46,7 +47,7 @@ interface AgentApi {
     suspend fun interrupt(id: String): Boolean
     suspend fun compact(id: String): Boolean
     suspend fun state(id: String): Pair<String, List<Any?>>
-    suspend fun mailbox(id: String): List<MailboxEntry>
+    suspend fun mailbox(id: String, before: String = "", limit: Int = 0): MailboxPage
 
     fun streamEvents(sessionId: String, since: String = ""): Flow<StreamEvent>
     fun watchSessions(): Flow<SessionListEvent>

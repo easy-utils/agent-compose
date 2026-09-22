@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS local_sessions (
 CREATE TABLE IF NOT EXISTS local_messages (
   session_id TEXT NOT NULL, id TEXT NOT NULL, role TEXT, prev_id TEXT DEFAULT '',
   created_at TEXT DEFAULT '', order_key INTEGER, status TEXT DEFAULT 'complete',
-  parts_json TEXT DEFAULT '[]', PRIMARY KEY (session_id, id));
+  parts_json TEXT DEFAULT '[]', source TEXT DEFAULT '', PRIMARY KEY (session_id, id));
 CREATE TABLE IF NOT EXISTS local_sync_state (
   session_id TEXT PRIMARY KEY, oldest_id TEXT DEFAULT '', has_more INTEGER DEFAULT 1, tip_id TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS local_drafts (
@@ -135,6 +135,23 @@ actual class LocalStore private constructor(private val conn: Connection) {
             Class.forName("org.sqlite.JDBC")
             val c = DriverManager.getConnection("jdbc:sqlite:${dbFile(scope).absolutePath}")
             c.createStatement().use { it.executeUpdate(SCHEMA) }
+            // v4 -> v5 cache migration: add the message ORIGIN `source` column;
+            // a DB predating it must drop the message cache so rows refetch with
+            // source intact (source-less rows would misrender a hand-off).
+            val hasSource = c.createStatement().use { st ->
+                st.executeQuery("PRAGMA table_info(local_messages)").use { rs ->
+                    var found = false
+                    while (rs.next()) if (rs.getString("name") == "source") found = true
+                    found
+                }
+            }
+            if (!hasSource) {
+                c.createStatement().use {
+                    it.executeUpdate("DROP TABLE IF EXISTS local_messages")
+                    it.executeUpdate("DROP TABLE IF EXISTS local_sync_state")
+                    it.executeUpdate(SCHEMA)
+                }
+            }
             LocalStore(c)
         }
     }
@@ -259,6 +276,7 @@ actual class LocalStore private constructor(private val conn: Connection) {
             status = rs.getString("status") ?: "complete",
             createdAt = rs.getString("created_at") ?: "",
             prevId = rs.getString("prev_id") ?: "",
+            source = rs.getString("source") ?: "",
             seq = rs.getInt("order_key"),
             parts = parts,
         )
@@ -306,13 +324,14 @@ actual class LocalStore private constructor(private val conn: Connection) {
                     ps.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
                 }) + 1
                 conn.prepareStatement(
-                    "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json, source) VALUES (?,?,?,?,?,?,?,?,?)",
                 ).use { ps ->
                     for (m in msgs) {
                         ps.setString(1, sessionId); ps.setString(2, m.id); ps.setString(3, m.role)
                         ps.setString(4, m.prevId); ps.setString(5, m.createdAt ?: "")
                         ps.setInt(6, order++); ps.setString(7, "complete")
                         ps.setString(8, kotlinx.serialization.json.Json.encodeToString(jsonArrOf(m.parts.map { messagePartToJson(it) })))
+                        ps.setString(9, m.source)
                         ps.executeUpdate()
                     }
                 }
@@ -334,13 +353,14 @@ actual class LocalStore private constructor(private val conn: Connection) {
                     ps.setString(1, sessionId); ps.executeUpdate()
                 }
                 conn.prepareStatement(
-                    "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json, source) VALUES (?,?,?,?,?,?,?,?,?)",
                 ).use { ps ->
                     msgs.filter { !it.isLocal }.forEachIndexed { i, m ->
                         ps.setString(1, sessionId); ps.setString(2, m.id); ps.setString(3, m.role)
                         ps.setString(4, m.prevId); ps.setString(5, m.createdAt)
                         ps.setInt(6, i); ps.setString(7, m.status)
                         ps.setString(8, kotlinx.serialization.json.Json.encodeToString(jsonArrOf(m.parts.map { partToJson(it) })))
+                        ps.setString(9, m.source)
                         ps.executeUpdate()
                     }
                 }

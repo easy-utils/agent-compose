@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS local_sessions (
 CREATE TABLE IF NOT EXISTS local_messages (
   session_id TEXT NOT NULL, id TEXT NOT NULL, role TEXT, prev_id TEXT DEFAULT '',
   created_at TEXT DEFAULT '', order_key INTEGER, status TEXT DEFAULT 'complete',
-  parts_json TEXT DEFAULT '[]', PRIMARY KEY (session_id, id));
+  parts_json TEXT DEFAULT '[]', source TEXT DEFAULT '', PRIMARY KEY (session_id, id));
 CREATE TABLE IF NOT EXISTS local_sync_state (
   session_id TEXT PRIMARY KEY, oldest_id TEXT DEFAULT '', has_more INTEGER DEFAULT 1, tip_id TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS local_drafts (
@@ -137,7 +137,7 @@ actual class LocalStore private constructor(private val helper: DbHelper) {
     private class DbHelper(
         context: android.content.Context,
         name: String,
-    ) : android.database.sqlite.SQLiteOpenHelper(context, name, null, 1) {
+    ) : android.database.sqlite.SQLiteOpenHelper(context, name, null, 2) {
         override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
             for (stmt in SCHEMA.split(";")) {
                 if (stmt.isNotBlank()) db.execSQL(stmt)
@@ -215,7 +215,7 @@ actual class LocalStore private constructor(private val helper: DbHelper) {
 
     actual suspend fun loadMessages(sessionId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         read(
-            "SELECT id, role, prev_id, created_at, order_key, status, parts_json FROM local_messages WHERE session_id = ? ORDER BY order_key ASC",
+            "SELECT id, role, prev_id, created_at, order_key, status, parts_json, source FROM local_messages WHERE session_id = ? ORDER BY order_key ASC",
             arrayOf(sessionId),
         ) { c ->
             buildList {
@@ -230,6 +230,7 @@ actual class LocalStore private constructor(private val helper: DbHelper) {
         id = c.getString(0), role = c.getString(1) ?: "", prevId = c.getString(2) ?: "",
         createdAt = c.getString(3) ?: "", seq = c.getInt(4), status = c.getString(5) ?: "complete",
         parts = DesktopJson.partsFrom(c.getString(6) ?: "[]"),
+        source = c.getString(7) ?: "",
     )
 
     actual suspend fun serverTipId(sessionId: String): String = withContext(Dispatchers.IO) {
@@ -257,8 +258,8 @@ actual class LocalStore private constructor(private val helper: DbHelper) {
                 q.close()
                 for (m in msgs) {
                     db.execSQL(
-                        "INSERT OR REPLACE INTO local_messages VALUES (?,?,?,?,?,?,?,?)",
-                        arrayOf<Any?>(sessionId, m.id, m.role, m.prevId, m.createdAt ?: "", order++, "complete", DesktopJson.partsOf(m.parts)),
+                        "INSERT OR REPLACE INTO local_messages VALUES (?,?,?,?,?,?,?,?,?)",
+                        arrayOf<Any?>(sessionId, m.id, m.role, m.prevId, m.createdAt ?: "", order++, "complete", DesktopJson.partsOf(m.parts), m.source),
                     )
                 }
                 syncState(db, sessionId, tipId)

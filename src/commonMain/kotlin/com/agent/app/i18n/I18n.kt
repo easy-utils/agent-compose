@@ -222,6 +222,15 @@ private val en: Map<String, String> = mapOf(
     "voicePermission" to "Microphone permission denied",
     "voiceTooShort" to "Recording too short",
     "workspace" to "Workspace",
+    "mailboxPrompt" to "Message",
+    "mailboxFromSession" to "From session",
+    "mailboxFromSystem" to "From system",
+    "mailboxInterrupt" to "Interrupt",
+    "mailboxEvent" to "Event",
+    "deliver" to "Deliver to mailbox",
+    "sending" to "Sending…",
+    "noMoreMessages" to "No more messages",
+    "forked" to "Forked",
 )
 
 private val zh: Map<String, String> = mapOf(
@@ -419,4 +428,13 @@ private val zh: Map<String, String> = mapOf(
     "voicePermission" to "未获得麦克风权限",
     "voiceTooShort" to "录音太短",
     "workspace" to "工作区",
+    "mailboxPrompt" to "消息",
+    "mailboxFromSession" to "来自会话",
+    "mailboxFromSystem" to "来自系统",
+    "mailboxInterrupt" to "中断",
+    "mailboxEvent" to "事件",
+    "deliver" to "发送到信箱",
+    "sending" to "发送中…",
+    "noMoreMessages" to "没有更多消息",
+    "forked" to "已派生",
 )

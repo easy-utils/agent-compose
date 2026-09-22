@@ -364,6 +364,34 @@ class MessagesController(
         }
         val params = ev.params
         when (ev.event) {
+            // The server AUTHORED this message's id and chain anchor. This is
+            // the ONLY place user bubbles are created (no client-optimistic
+            // row). `streaming:true` opens the assistant step's bubble, whose
+            // deltas then arrive under the same id.
+            "message-added" -> {
+                val addedId = params["message_id"] as String? ?: ""
+                val prevId = params["prev_id"] as String? ?: ""
+                val role = params["role"] as String? ?: "assistant"
+                val streaming = params["streaming"] == true
+                val src = params["source"] as String? ?: ""
+                if (addedId.isNotEmpty()) {
+                    if (streaming && role == "assistant") {
+                        val prevStream = streamingId
+                        if (prevStream != null && prevStream != addedId) {
+                            messages = messages.map {
+                                if (it.id == prevStream && it.status == "streaming") {
+                                    it.copy(status = "complete")
+                                } else it
+                            }
+                        }
+                        streamingId = addedId
+                        ensureStreamingMsgAt(addedId, prevId)
+                    } else if (role == "user") {
+                        upsertServerMessage(addedId, prevId, "user", src)
+                    }
+                    revision++
+                }
+            }
             "start-step", "text-start", "reasoning-start", "tool-input-start" -> {
                 if (suppressRunContent) return
                 val current = streamingId?.let { id -> messages.firstOrNull { it.id == id } }
@@ -525,6 +553,42 @@ class MessagesController(
         // lingers until the next unrelated revision.
         revision++
         return id
+    }
+
+    /** Open (or reuse) the server-authored streaming assistant bubble for the
+     *  id announced by `message-added{streaming:true}`. No id is minted here. */
+    private fun ensureStreamingMsgAt(id: String, prevId: String) {
+        if (messages.any { it.id == id }) {
+            streamingId = id
+            return
+        }
+        messages = messages + ChatMessage(
+            id = id,
+            role = "assistant",
+            status = "streaming",
+            parts = emptyList(),
+            prevId = prevId,
+            createdAt = nowIso(),
+            isLocal = true,
+            seq = allocSeq(),
+        )
+        revision++
+    }
+
+    /** Render a persisted (non-streaming) row announced via `message-added`
+     *  using the server-authored id/position — the user prompt in particular. */
+    private fun upsertServerMessage(id: String, prevId: String, role: String, source: String) {
+        if (messages.any { it.id == id }) return
+        messages = messages + ChatMessage(
+            id = id,
+            role = role,
+            status = "complete",
+            parts = emptyList(),
+            prevId = prevId,
+            source = source,
+            createdAt = nowIso(),
+            seq = allocSeq(),
+        )
     }
 
     private fun setMsg(id: String, fn: (ChatMessage) -> ChatMessage) {
@@ -696,57 +760,14 @@ class MessagesController(
         if ((trimmed.isEmpty() && attachments.isEmpty()) || sending) return
         sending = true
         val codes = attachments.map { it.code }
-        val now = com.agent.app.util.nowMillis()
-        val userParts = buildList {
-            attachments.forEach {
-                add(
-                    ChatPart(
-                        id = "f${it.code}", type = "file", code = it.code, name = it.name,
-                        mime = it.mime, size = it.size,
-                    ),
-                )
-            }
-            if (trimmed.isNotEmpty()) add(ChatPart(id = "p$now", type = "text", text = trimmed))
-        }
-        // A prior send that never got a server id (prompt error / abort) would
-        // otherwise linger as a `pending` local user bubble and be mistaken for
-        // the one this send adopts. Supersede it: only the bubble created below
-        // may be relabeled.
-        val localUserId = "u$now"
-        messages = messages.filter {
-            it.status != "streaming" && !(it.isLocal && it.role == "user" && it.status == "pending")
-        } + ChatMessage(
-            id = localUserId,
-            role = "user",
-            status = "pending",
-            parts = userParts,
-            createdAt = nowIso(),
-            isLocal = true,
-            seq = allocSeq(),
-        )
-        ensureStreamingMsg(true)
+        // No client-optimistic user bubble: the server AUTHORS the message id
+        // and chain position and announces it via `message-added{role:user}`
+        // once the running turn drains the mailbox. We only show the composer
+        // spinner until the send RPC is accepted.
         revision++
         try {
-            val messageId = api.prompt(getSessionId(), trimmed, codes)
-            if (messageId.isNotEmpty()) {
-                // The prompt route persists the row BEFORE returning its id, so
-                // a concurrent reconcile (messageSeq bump / WatchSession) may
-                // already have imported the server copy. Adopt the id on OUR
-                // optimistic bubble only, and DROP it when the server copy is
-                // already present — relabeling it would create two entries with
-                // the same id and crash the keyed LazyColumn.
-                val serverHasIt = messages.any { it.id == messageId }
-                messages = if (serverHasIt) {
-                    messages.filterNot { it.id == localUserId }
-                } else {
-                    messages.map {
-                        if (it.id == localUserId) {
-                            it.copy(id = messageId, status = "complete", isLocal = false)
-                        } else it
-                    }
-                }
-                revision++
-            }
+            api.prompt(getSessionId(), trimmed, codes)
+            // The send is durable at `accepted`; the bubble follows the stream.
         } catch (e: Exception) {
             addError(sendFailed(e))
             sending = false

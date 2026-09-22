@@ -55,6 +55,7 @@ fun SessionListScreen(store: AppStore) {
     var actionsFor by remember { mutableStateOf<Session?>(null) }
     var createOpen by remember { mutableStateOf(false) }
     var deleteConfirmFor by remember { mutableStateOf<String?>(null) }
+    var forkFor by remember { mutableStateOf<String?>(null) }
     // Subsession tree: parents with children are COLLAPSED by default; this
     // holds the ids the user manually expanded (memory-only by design).
     var expanded by remember { mutableStateOf(setOf<String>()) }
@@ -258,10 +259,34 @@ fun SessionListScreen(store: AppStore) {
         ActionSheet(
             title = s.sessionName,
             actions = buildList {
+                // Fork WITHOUT opening the session; the new branch lands in the
+                // list (mirrors the webui session-row context menu).
+                add(t("fork") to { forkFor = s.id })
                 if (store.isUnread(s)) add(t("markRead") to { store.markSessionRead(s.id) })
                 add(t("deleteSession") to { deleteConfirmFor = s.id })
             },
             onDismiss = { actionsFor = null },
+        )
+    }
+
+    forkFor?.let { id ->
+        TextInputDialog(
+            title = t("fork"),
+            initial = "",
+            confirmLabel = t("fork"),
+            onDismiss = { forkFor = null },
+            onConfirm = { branch ->
+                forkFor = null
+                if (branch.isNotBlank()) {
+                    scope.launch {
+                        try {
+                            store.api.fork(id, branch.trim())
+                            store.refreshSessions()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            },
         )
     }
 

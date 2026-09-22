@@ -83,7 +83,7 @@ kotlin {
             dependencies {
                 // Typed agent client + pbandk messages over easy-rpc; `api`
                 // re-exports easy-rpc-kotlin (Transport/RPCError) and pbandk.
-                api("io.github.easy-utils:agent-sdk-kotlin:0.20.0")
+                api("io.github.easy-utils:agent-sdk-kotlin:0.21.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
                 implementation(compose.runtime)
                 implementation(compose.foundation)

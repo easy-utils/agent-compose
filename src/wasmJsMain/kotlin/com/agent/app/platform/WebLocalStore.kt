@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS local_sessions (
 CREATE TABLE IF NOT EXISTS local_messages (
   session_id TEXT NOT NULL, id TEXT NOT NULL, role TEXT, prev_id TEXT DEFAULT '',
   created_at TEXT DEFAULT '', order_key INTEGER, status TEXT DEFAULT 'complete',
-  parts_json TEXT DEFAULT '[]', PRIMARY KEY (session_id, id));
+  parts_json TEXT DEFAULT '[]', source TEXT DEFAULT '', PRIMARY KEY (session_id, id));
 CREATE TABLE IF NOT EXISTS local_sync_state (
   session_id TEXT PRIMARY KEY, oldest_id TEXT DEFAULT '', has_more INTEGER DEFAULT 1, tip_id TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS local_drafts (
@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS read_seqs (session_id TEXT PRIMARY KEY, seq INTEGER D
         val hasGroupKey = SqliteBridge.hasColumn("local_sessions", "group_key")
         if (!hasGroupKey) {
             SqliteBridge.exec("ALTER TABLE local_sessions ADD COLUMN group_key TEXT DEFAULT ''")
+        }
+        // v5: the message ORIGIN `source` column. When missing, drop the message
+        // cache + anchors so the next open refetches with source intact.
+        val hasSource = SqliteBridge.hasColumn("local_messages", "source")
+        if (!hasSource) {
+            SqliteBridge.exec("ALTER TABLE local_messages ADD COLUMN source TEXT DEFAULT ''")
+            SqliteBridge.exec("DELETE FROM local_messages")
+            SqliteBridge.exec("DELETE FROM local_sync_state")
         }
     }
 
@@ -165,6 +173,7 @@ CREATE TABLE IF NOT EXISTS read_seqs (session_id TEXT PRIMARY KEY, seq INTEGER D
             createdAt = str(o, "created_at"),
             seq = int(o, "order_key"),
             prevId = str(o, "prev_id"),
+            source = str(o, "source"),
             isLocal = false,
         )
     }
@@ -229,8 +238,8 @@ CREATE TABLE IF NOT EXISTS read_seqs (session_id TEXT PRIMARY KEY, seq INTEGER D
         for (m in msgs) {
             val partsJson = "[" + m.parts.map { messagePartToJson(it) }.joinToString(",") + "]"
             SqliteBridge.exec(
-                "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json) VALUES (?,?,?,?,?,?,?,?)",
-                listOf(sessionId, m.id, m.role, m.prevId, m.createdAt ?: "", ++order, "complete", partsJson),
+                "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json, source) VALUES (?,?,?,?,?,?,?,?,?)",
+                listOf(sessionId, m.id, m.role, m.prevId, m.createdAt ?: "", ++order, "complete", partsJson, m.source),
             )
         }
         upsertSyncState(sessionId, tipId)
@@ -243,8 +252,8 @@ CREATE TABLE IF NOT EXISTS read_seqs (session_id TEXT PRIMARY KEY, seq INTEGER D
             if (m.isLocal) continue
             val partsJson = "[" + m.parts.map { partToJson(it) }.joinToString(",") + "]"
             SqliteBridge.exec(
-                "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json) VALUES (?,?,?,?,?,?,?,?)",
-                listOf(sessionId, m.id, m.role, m.prevId, m.createdAt, i++, m.status, partsJson),
+                "INSERT OR REPLACE INTO local_messages (session_id, id, role, prev_id, created_at, order_key, status, parts_json, source) VALUES (?,?,?,?,?,?,?,?,?)",
+                listOf(sessionId, m.id, m.role, m.prevId, m.createdAt, i++, m.status, partsJson, m.source),
             )
         }
         upsertSyncState(sessionId, tipId)

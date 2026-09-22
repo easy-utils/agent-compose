@@ -103,6 +103,8 @@ data class Message(
     val parts: List<MessagePart>,
     val createdAt: String? = null,
     val prevId: String = "",
+    /** ORIGIN of the message ('' for agent-authored). */
+    val source: String = "",
 )
 
 data class ChatPart(
@@ -126,6 +128,8 @@ data class ChatMessage(
     val seq: Int? = null,
     val prevId: String = "",
     val isLocal: Boolean = false,
+    /** ORIGIN of the message ('' for agent-authored). */
+    val source: String = "",
 )
 
 enum class UploadState { IDLE, UPLOADING, DONE, ERROR }
@@ -171,6 +175,14 @@ data class MailboxEntry(
     val status: String,
     val createdAt: String,
     val consumedAt: String? = null,
+    /** ORIGIN: user / session:{name} / system:{name} / extension-defined. */
+    val source: String = "",
+)
+
+/** One page of the mailbox (newest-first) plus whether older entries exist. */
+data class MailboxPage(
+    val entries: List<MailboxEntry>,
+    val hasMore: Boolean,
 )
 
 data class Preset(
