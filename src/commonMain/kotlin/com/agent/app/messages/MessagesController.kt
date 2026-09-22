@@ -384,7 +384,10 @@ class MessagesController(
                             }
                         }
                         streamingId = addedId
-                        ensureStreamingMsgAt(addedId, prevId)
+                        if (!ensureStreamingMsgAt(addedId, prevId)) {
+                            // Already persisted: a replay of a finished step.
+                            streamingId = null
+                        }
                     } else if (role == "user") {
                         upsertServerMessage(addedId, prevId, "user", src)
                     }
@@ -396,6 +399,7 @@ class MessagesController(
                 val current = streamingId?.let { id -> messages.firstOrNull { it.id == id } }
                 val hasToolPart = current?.parts?.any { it.type == "tool" } ?: false
                 val sid = ensureStreamingMsg(ev.event == "start-step" || (ev.event == "text-start" && hasToolPart))
+                    ?: return
                 val pid = params["id"] as String?
                 when (ev.event) {
                     "text-start" -> if (pid != null) ensurePart(sid, pid, "text")
@@ -418,7 +422,7 @@ class MessagesController(
                 val pid = params["id"] as? String
                 val text = params["text"] as? String
                 if (pid != null && text != null) {
-                    appendDelta(ensureStreamingMsg(false), pid, text, false)
+                    appendDelta(ensureStreamingMsg(false) ?: return, pid, text, false)
                 }
             }
             "reasoning-delta" -> {
@@ -426,12 +430,12 @@ class MessagesController(
                 val pid = params["id"] as? String
                 val text = params["text"] as? String
                 if (pid != null && text != null) {
-                    appendDelta(ensureStreamingMsg(false), "r$pid", text, true)
+                    appendDelta(ensureStreamingMsg(false) ?: return, "r$pid", text, true)
                 }
             }
             "tool-call" -> {
                 if (suppressRunContent) return
-                val sid = ensureStreamingMsg(false)
+                val sid = ensureStreamingMsg(false) ?: return
                 val tcId = (params["toolCallId"] ?: params["id"]) as? String
                 if (tcId != null) {
                     addToolPart(
@@ -472,7 +476,7 @@ class MessagesController(
                 // (same path as a persisted file part) on the streaming bubble.
                 val code = params["code"] as? String
                 if (code.isNullOrEmpty()) return
-                val sid = ensureStreamingMsg(false)
+                val sid = ensureStreamingMsg(false) ?: return
                 val partId = "f$code"
                 setMsg(sid) { m ->
                     if (m.parts.any { it.id == partId }) m
@@ -531,10 +535,16 @@ class MessagesController(
 
     private fun nowIso(): String = kotlin.time.Clock.System.now().toString()
 
-    private fun ensureStreamingMsg(forceNew: Boolean): String {
+    /** Returns the streaming bubble id, or null when the target is a PERSISTED
+     *  (non-local) step — a reconnect replay of a finished step; callers must
+     *  skip the mutation. */
+    private fun ensureStreamingMsg(forceNew: Boolean): String? {
         streamingId?.let { id ->
             val existing = messages.firstOrNull { it.id == id }
-            if (existing != null && (!forceNew || existing.parts.isEmpty())) return id
+            if (existing != null) {
+                if (!existing.isLocal) return null // persisted step: replay duplicate
+                if (!forceNew || existing.parts.isEmpty()) return id
+            }
         }
         val id = "m${com.agent.app.util.nowMillis()}"
         streamingId = id
@@ -556,10 +566,13 @@ class MessagesController(
 
     /** Open (or reuse) the server-authored streaming assistant bubble for the
      *  id announced by `message-added{streaming:true}`. No id is minted here. */
-    private fun ensureStreamingMsgAt(id: String, prevId: String) {
-        if (messages.any { it.id == id }) {
+    private fun ensureStreamingMsgAt(id: String, prevId: String): Boolean {
+        val existing = messages.firstOrNull { it.id == id }
+        if (existing != null) {
+            // A persisted row: this is a replay of a finished step.
+            if (!existing.isLocal) return false
             streamingId = id
-            return
+            return true
         }
         messages = messages + ChatMessage(
             id = id,
@@ -572,6 +585,7 @@ class MessagesController(
             seq = allocSeq(),
         )
         revision++
+        return true
     }
 
     /** Render a persisted (non-streaming) row announced via `message-added`
@@ -593,6 +607,10 @@ class MessagesController(
     private fun setMsg(id: String, fn: (ChatMessage) -> ChatMessage) {
         val idx = messages.indexOfFirst { it.id == id }
         if (idx < 0) return
+        // A PERSISTED (non-local) row is a finished step: a streamed mutation
+        // for it is a reconnect-replay duplicate. Dropping it here guards every
+        // stream mutator (part ensure/append/tool) in one place.
+        if (!messages[idx].isLocal) return
         messages = messages.toMutableList().also { it[idx] = fn(it[idx]) }
         revision++
     }

@@ -151,10 +151,32 @@ class AppStore(
         }
     }
 
+    /** Assign the session list, ALWAYS ordered most-recent-first. The server
+     *  snapshot is ordered by `updated_at`, but a live upsert only advances a
+     *  row's `lastMessageAt` in place — without this re-sort the row's timestamp
+     *  changes while its position does not. Recency: lastMessageAt -> updatedAt
+     *  -> createdAt. */
+    private fun assignSessions(list: List<Session>) {
+        sessions = list.sortedByDescending { recency(it) }
+    }
+
+    private fun recency(s: Session): Long =
+        listOf(s.lastMessageAt, s.updatedAt, s.createdAt)
+            .firstNotNullOfOrNull { parseIsoMillis(it) } ?: 0L
+
+    private fun parseIsoMillis(v: String): Long? {
+        if (v.isEmpty()) return null
+        return try {
+            kotlin.time.Instant.parse(v).toEpochMilliseconds()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun applySessionEvent(snapshot: Boolean, upserts: List<Session>, removed: List<String>) {
         attempt = 0
         if (snapshot) {
-            sessions = upserts.toList()
+            assignSessions(upserts)
             seedFirstSnapshot()
         } else {
             val next = sessions.toMutableList()
@@ -163,7 +185,7 @@ class AppStore(
                 if (i == -1) next.add(s) else next[i] = s
             }
             next.apply { if (removed.isNotEmpty()) removeAll { it.id in removed } }
-            sessions = next
+            assignSessions(next)
         }
         activeSession?.let { a ->
             val read = readSeqs[a.id] ?: -1
@@ -180,7 +202,7 @@ class AppStore(
 
     suspend fun refreshSessions() {
         try {
-            sessions = api.listSessions()
+            assignSessions(api.listSessions())
             sessionError = ""
         } catch (e: Exception) {
             if (isAuthError(e)) AuthExpired.notifyAuth()
@@ -315,7 +337,7 @@ class AppStore(
     }
 
     fun applySession(updated: Session) {
-        sessions = sessions.map { if (it.id == updated.id) updated else it }
+        assignSessions(sessions.map { if (it.id == updated.id) updated else it })
         bumpSessionRevision()
     }
 
