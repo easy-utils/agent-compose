@@ -1,0 +1,174 @@
+{
+  "$comment": "Shared behavioural conformance corpus for the Easy Agent clients. Each client replays these step-scripts through its REAL MessagesController against a scripted fake AgentApi, then compares a normalized state snapshot. This file is the source of truth; `python3 conformance.py --emit` copies it into every client and `--check` fails on drift.",
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "boot_empty",
+      "why": "an empty session boots with no optimistic bubbles",
+      "steps": [],
+      "expect": { "sending": false, "messages": [] }
+    },
+    {
+      "id": "happy_path",
+      "why": "message-added -> deltas -> tool -> turn-complete -> reconcile; the user bubble is server-authored",
+      "steps": [
+        { "op": "send", "text": "hi" },
+        { "op": "status", "value": "busy" },
+        { "op": "persist", "messages": [ { "id": "u1", "role": "user", "prevId": "", "parts": [ { "id": "p0", "type": "text", "text": "hi" } ] } ] },
+        { "op": "event", "event": "status", "params": { "type": "busy" } },
+        { "op": "event", "event": "message-added", "params": { "message_id": "u1", "prev_id": "", "role": "user" } },
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "u1", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "text-start", "params": { "id": "t0", "message_id": "a1" } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": "Hello" } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": " world" } },
+        { "op": "event", "event": "tool-input-start", "params": { "id": "tc1", "toolName": "web.search" } },
+        { "op": "event", "event": "tool-input-delta", "params": { "id": "tc1", "delta": "{\"q\":\"x\"}" } },
+        { "op": "event", "event": "tool-call", "params": { "toolCallId": "tc1", "toolName": "web.search", "input": { "q": "x" } } },
+        { "op": "event", "event": "tool-result", "params": { "toolCallId": "tc1", "output": "found 1" } },
+        { "op": "persist", "messages": [ { "id": "a1", "role": "assistant", "prevId": "u1", "parts": [ { "id": "t0", "type": "text", "text": "Hello world" }, { "id": "tc1", "type": "tool_result", "tool": "web.search" } ] } ] },
+        { "op": "status", "value": "idle" },
+        { "op": "event", "event": "turn-complete", "params": { "reason": "stop" } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "u1", "role": "user", "status": "complete", "isLocal": false, "parts": [] },
+          { "id": "a1", "role": "assistant", "status": "complete", "isLocal": false, "parts": [
+            { "type": "text", "text": "Hello world" },
+            { "type": "tool", "tool": "web.search", "toolStatus": "complete", "output": "found 1" }
+          ] }
+        ]
+      }
+    },
+    {
+      "id": "replay_reorder",
+      "why": "a delta arriving before message-added must not duplicate the bubble",
+      "steps": [
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": "Hi", "message_id": "a1" } },
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "streaming", "isLocal": true, "parts": [ { "type": "text", "text": "Hi" } ] }
+        ]
+      }
+    },
+    {
+      "id": "multi_step",
+      "why": "a new step message-added finalizes the prior streaming bubble",
+      "steps": [
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": "step one", "message_id": "a1" } },
+        { "op": "persist", "messages": [ { "id": "a1", "role": "assistant", "prevId": "", "parts": [ { "id": "t0", "type": "text", "text": "step one" } ] } ] },
+        { "op": "event", "event": "message-added", "params": { "message_id": "a2", "prev_id": "a1", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t1", "text": "step two", "message_id": "a2" } },
+        { "op": "persist", "messages": [ { "id": "a2", "role": "assistant", "prevId": "a1", "parts": [ { "id": "t1", "type": "text", "text": "step two" } ] } ] },
+        { "op": "event", "event": "turn-complete", "params": { "reason": "stop" } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "complete", "parts": [ { "type": "text", "text": "step one" } ] },
+          { "id": "a2", "role": "assistant", "status": "complete", "parts": [ { "type": "text", "text": "step two" } ] }
+        ]
+      }
+    },
+    {
+      "id": "eid_dedup",
+      "why": "a replayed event (same eid) is applied exactly once",
+      "steps": [
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "text-delta", "eid": "dup-eid", "params": { "id": "t0", "text": "Ha" } },
+        { "op": "event", "event": "text-delta", "eid": "dup-eid", "params": { "id": "t0", "text": "Ha" } },
+        { "op": "event", "event": "text-delta", "eid": "dup-eid", "params": { "id": "t0", "text": "Ha" } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "streaming", "parts": [ { "type": "text", "text": "Ha" } ] }
+        ]
+      }
+    },
+    {
+      "id": "reconnect_persisted",
+      "why": "replayed deltas for a PERSISTED step must not duplicate its parts",
+      "steps": [
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": "Hello", "message_id": "a1" } },
+        { "op": "event", "event": "reasoning-delta", "params": { "id": "r0", "text": "think", "message_id": "a1" } },
+        { "op": "persist", "messages": [ { "id": "a1", "role": "assistant", "prevId": "", "parts": [ { "id": "srv-t0", "type": "text", "text": "Hello" }, { "id": "srv-r0", "type": "reasoning", "text": "think" } ] } ] },
+        { "op": "event", "event": "turn-complete", "params": { "reason": "stop" } },
+        { "op": "event", "event": "text-delta", "params": { "id": "t0", "text": "Hello", "message_id": "a1" } },
+        { "op": "event", "event": "reasoning-delta", "params": { "id": "r0", "text": "think", "message_id": "a1" } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "complete", "parts": [
+            { "type": "reasoning", "text": "think" },
+            { "type": "text", "text": "Hello" }
+          ] }
+        ]
+      }
+    },
+    {
+      "id": "tool_error",
+      "why": "tool-error marks the part error and keeps the bubble",
+      "steps": [
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "tool-call", "params": { "toolCallId": "tc9", "toolName": "boom" } },
+        { "op": "event", "event": "tool-error", "params": { "toolCallId": "tc9", "error": { "message": "kaput" } } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "streaming", "parts": [
+            { "type": "tool", "tool": "boom", "toolStatus": "error", "toolError": "kaput" }
+          ] }
+        ]
+      }
+    },
+    {
+      "id": "model_error",
+      "why": "a model error event adds a local error bubble and clears sending",
+      "steps": [
+        { "op": "event", "event": "status", "params": { "type": "busy" } },
+        { "op": "event", "event": "message-added", "params": { "message_id": "a1", "prev_id": "", "role": "assistant", "streaming": true } },
+        { "op": "event", "event": "error", "params": { "error": { "message": "upstream 500" } } }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "id": "a1", "role": "assistant", "status": "complete", "parts": [] },
+          { "role": "error", "status": "error", "isLocal": true, "errorKind": "model", "containsText": "upstream 500" }
+        ]
+      }
+    },
+    {
+      "id": "send_failure",
+      "why": "a deliver failure surfaces a send error bubble",
+      "steps": [
+        { "op": "failPrompt", "error": "mailbox down" },
+        { "op": "send", "text": "hi" }
+      ],
+      "expect": {
+        "sending": false,
+        "messages": [
+          { "role": "error", "status": "error", "isLocal": true, "errorKind": "send", "containsText": "mailbox down" }
+        ]
+      }
+    },
+    {
+      "id": "error_transient",
+      "why": "sending a new prompt clears a prior error bubble (transient state)",
+      "steps": [
+        { "op": "failPrompt", "error": "mailbox down" },
+        { "op": "send", "text": "hi" },
+        { "op": "clearPromptError" },
+        { "op": "send", "text": "again" }
+      ],
+      "expect": { "sending": false, "messages": [] }
+    }
+  ]
+}

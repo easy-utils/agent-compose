@@ -398,8 +398,14 @@ class MessagesController(
                 if (suppressRunContent) return
                 val current = streamingId?.let { id -> messages.firstOrNull { it.id == id } }
                 val hasToolPart = current?.parts?.any { it.type == "tool" } ?: false
-                val sid = ensureStreamingMsg(ev.event == "start-step" || (ev.event == "text-start" && hasToolPart))
-                    ?: return
+                val key = streamMsgId(params)
+                val forceNew = ev.event == "start-step" || (ev.event == "text-start" && hasToolPart)
+                val sid = if (key != null && messages.any { it.id == key }) {
+                    if (!ensureStreamingMsgAt(key, params["prev_id"] as? String ?: "")) return
+                    key
+                } else {
+                    ensureStreamingMsg(forceNew) ?: return
+                }
                 val pid = params["id"] as String?
                 when (ev.event) {
                     "text-start" -> if (pid != null) ensurePart(sid, pid, "text")
@@ -422,7 +428,7 @@ class MessagesController(
                 val pid = params["id"] as? String
                 val text = params["text"] as? String
                 if (pid != null && text != null) {
-                    appendDelta(ensureStreamingMsg(false) ?: return, pid, text, false)
+                    appendDelta(routeStreamMsg(params), pid, text, false)
                 }
             }
             "reasoning-delta" -> {
@@ -430,12 +436,12 @@ class MessagesController(
                 val pid = params["id"] as? String
                 val text = params["text"] as? String
                 if (pid != null && text != null) {
-                    appendDelta(ensureStreamingMsg(false) ?: return, "r$pid", text, true)
+                    appendDelta(routeStreamMsg(params), "r$pid", text, true)
                 }
             }
             "tool-call" -> {
                 if (suppressRunContent) return
-                val sid = ensureStreamingMsg(false) ?: return
+                val sid = routeStreamMsg(params)
                 val tcId = (params["toolCallId"] ?: params["id"]) as? String
                 if (tcId != null) {
                     addToolPart(
@@ -476,7 +482,7 @@ class MessagesController(
                 // (same path as a persisted file part) on the streaming bubble.
                 val code = params["code"] as? String
                 if (code.isNullOrEmpty()) return
-                val sid = ensureStreamingMsg(false) ?: return
+                val sid = routeStreamMsg(params)
                 val partId = "f$code"
                 setMsg(sid) { m ->
                     if (m.parts.any { it.id == partId }) m
@@ -534,6 +540,28 @@ class MessagesController(
         messages.filter { it.isLocal && (it.status == "streaming" || it.status == "pending") }
 
     private fun nowIso(): String = kotlin.time.Clock.System.now().toString()
+
+    /** The server-authored `message_id` stamped on a part, else the current
+     *  streaming bubble. Route by that id; never invent one (webui parity). */
+    private fun streamMsgId(params: Map<String, Any?>): String? {
+        val id = params["message_id"] as? String
+        return if (!id.isNullOrEmpty()) id else streamingId
+    }
+
+    /** Resolve the streaming bubble for a delta, creating it under the server
+     *  id when the delta arrives before its `message-added`. Returns the id, or
+     *  a sentinel that makes the caller skip (persisted step / no target). */
+    private fun routeStreamMsg(params: Map<String, Any?>): String {
+        val key = streamMsgId(params) ?: return ""
+        val existing = messages.firstOrNull { it.id == key }
+        if (existing != null) {
+            if (!existing.isLocal) return "" // persisted: replay duplicate
+            return key
+        }
+        // A delta before message-added: open the bubble under the server id.
+        if (!ensureStreamingMsgAt(key, params["prev_id"] as? String ?: "")) return ""
+        return key
+    }
 
     /** Returns the streaming bubble id, or null when the target is a PERSISTED
      *  (non-local) step — a reconnect replay of a finished step; callers must
