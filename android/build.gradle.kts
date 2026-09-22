@@ -25,7 +25,13 @@ android {
         targetSdk = 37
         versionCode = 3
         versionName = "0.1.2"
-        ndk { abiFilters += listOf("arm64-v8a") }
+        // The appstore publishes a single arm64 APK (every supported device is
+        // aarch64). Sandbox emulator testing is x86_64, so the ABI set is
+        // overridable: -Pabis=x86_64 (comma-separated) for a debug/test build.
+        val abis = (project.findProperty("abis") as String?)
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?: listOf("arm64-v8a")
+        ndk { abiFilters += abis }
     }
 
     compileOptions {
