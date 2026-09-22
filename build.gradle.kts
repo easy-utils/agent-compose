@@ -114,6 +114,14 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
             }
         }
+        // A live smoke test that drives the REAL AgentApiImpl against the
+        // deployed agent (run with `gradle :desktopTest`). Skipped when the
+        // gateway is unreachable so the suite stays green offline.
+        val desktopTest = getByName("desktopTest") {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val androidMain = getByName("androidMain") {
             dependsOn(jvmShared)
             // No android-only deps here any more: the Activity/Compose runtime
