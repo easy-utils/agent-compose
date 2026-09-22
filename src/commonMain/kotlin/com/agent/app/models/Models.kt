@@ -130,6 +130,8 @@ data class ChatMessage(
     val isLocal: Boolean = false,
     /** ORIGIN of the message ('' for agent-authored). */
     val source: String = "",
+    /** For a local error bubble: what failed ('send' | 'model'). */
+    val errorKind: String = "",
 )
 
 enum class UploadState { IDLE, UPLOADING, DONE, ERROR }

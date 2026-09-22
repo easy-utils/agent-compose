@@ -27,7 +27,6 @@ class MessagesController(
     private val getSessionId: () -> String,
     private val local: LocalStore?,
     private val scope: CoroutineScope,
-    private val sendFailed: (Exception) -> String,
 ) {
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
     var sending by mutableStateOf(false)
@@ -511,14 +510,14 @@ class MessagesController(
                     finishStreaming()
                 }
             }
-            "error", "provider-error" -> {
+            "error" -> {
                 val errObj = params["error"]
                 val content = when (errObj) {
                     is String -> errObj
                     is Map<*, *> -> ((errObj["message"] ?: params["message"]) ?: "Unknown error").toString()
                     else -> (params["message"] ?: "Unknown error").toString()
                 }
-                addError(content)
+                addError(content, "model")
                 sending = false
                 revision++
             }
@@ -736,7 +735,15 @@ class MessagesController(
         }
     }
 
-    private fun addError(text: String) {
+    /** Drop every local error bubble. Called when the user sends a new prompt:
+     *  an error is a TRANSIENT state, cleared by the next send. */
+    private fun clearErrors() {
+        if (localErrors.isEmpty()) return
+        localErrors.clear()
+        messages = messages.filter { it.role != "error" }
+    }
+
+    private fun addError(text: String, kind: String = "model") {
         // Stop the in-flight stream so a late turn-complete / status:idle can
         // not rebuild the list without the error bubble.
         streamingId = null
@@ -749,6 +756,7 @@ class MessagesController(
             parts = listOf(ChatPart(id = "p$now", type = "text", text = text)),
             createdAt = nowIso(),
             isLocal = true,
+            errorKind = kind,
             seq = allocSeq(),
         )
         localErrors.add(err)
@@ -759,6 +767,9 @@ class MessagesController(
         val trimmed = text.trim()
         if ((trimmed.isEmpty() && attachments.isEmpty()) || sending) return
         sending = true
+        // An error is TRANSIENT: a new prompt clears any prior error card,
+        // BEFORE the RPC so a send failure re-adds its own below.
+        clearErrors()
         val codes = attachments.map { it.code }
         // No client-optimistic user bubble: the server AUTHORS the message id
         // and chain position and announces it via `message-added{role:user}`
@@ -769,7 +780,8 @@ class MessagesController(
             api.prompt(getSessionId(), trimmed, codes)
             // The send is durable at `accepted`; the bubble follows the stream.
         } catch (e: Exception) {
-            addError(sendFailed(e))
+            // The card TITLE says what failed; the body is the raw error.
+            addError("$e", "send")
             sending = false
             revision++
         }

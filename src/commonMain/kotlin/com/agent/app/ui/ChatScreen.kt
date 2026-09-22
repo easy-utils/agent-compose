@@ -97,7 +97,7 @@ fun ChatScreen(store: AppStore) {
     val ctrl = remember(sid) {
         MessagesController(
             store.api, { sid }, store.local, scope,
-        ) { e -> t("sendFailed", e.message ?: e.toString()) }
+        )
     }
     DisposableEffect(sid) {
         ctrl.init()
@@ -1053,7 +1053,11 @@ fun MessageBubble(
                         .padding(horizontal = AppSpacing.MD.dp, vertical = AppSpacing.SM.dp + 2.dp),
                 ) {
                 if (isError) {
-                    Text(t("error"), style = AppText.micro.copy(fontWeight = FontWeight.SemiBold), color = colors.destructive)
+                    Text(
+                        if (msg.errorKind == "send") t("sendFailedTitle") else t("modelError"),
+                        style = AppText.micro.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.destructive,
+                    )
                     Spacer(Modifier.height(4.dp))
                 }
                 // Source chip: "来自会话 · {name}" / "来自系统 · {name}".

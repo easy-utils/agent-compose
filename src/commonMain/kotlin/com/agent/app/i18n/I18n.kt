@@ -230,6 +230,8 @@ private val en: Map<String, String> = mapOf(
     "sending" to "Sending…",
     "noMoreMessages" to "No more messages",
     "forked" to "Forked",
+    "sendFailedTitle" to "Send failed",
+    "modelError" to "Model error",
 )
 
 private val zh: Map<String, String> = mapOf(
@@ -435,4 +437,6 @@ private val zh: Map<String, String> = mapOf(
     "sending" to "发送中…",
     "noMoreMessages" to "没有更多消息",
     "forked" to "已派生",
+    "sendFailedTitle" to "发送失败",
+    "modelError" to "模型错误",
 )
