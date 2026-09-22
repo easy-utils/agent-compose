@@ -265,6 +265,7 @@ fun SessionListScreen(store: AppStore) {
                 if (store.isUnread(s)) add(t("markRead") to { store.markSessionRead(s.id) })
                 add(t("deleteSession") to { deleteConfirmFor = s.id })
             },
+            icons = mapOf(t("fork") to AppIcons.fork),
             onDismiss = { actionsFor = null },
         )
     }

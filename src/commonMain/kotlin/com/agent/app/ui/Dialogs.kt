@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -107,6 +109,8 @@ fun ActionSheet(
     title: String,
     actions: List<Pair<String, () -> Unit>>,
     onDismiss: () -> Unit,
+    /** Optional leading icon per action label (e.g. fork). */
+    icons: Map<String, androidx.compose.ui.graphics.vector.ImageVector> = emptyMap(),
 ) {
     val colors = LocalAppColors.current
     Dialog(onDismissRequest = onDismiss) {
@@ -119,12 +123,17 @@ fun ActionSheet(
                 modifier = Modifier.padding(horizontal = AppSpacing.LG.dp, vertical = AppSpacing.SM.dp),
             )
             for ((label, action) in actions) {
-                Box(
+                Row(
                     Modifier.fillMaxWidth().appClickable(enabled = true, shape = AppRadius.sm) {
                         onDismiss()
                         action()
                     }.padding(horizontal = AppSpacing.LG.dp, vertical = 12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
+                    icons[label]?.let {
+                        Icon(it, contentDescription = null, tint = colors.foreground, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(AppSpacing.MD.dp))
+                    }
                     Text(label, style = AppText.body)
                 }
             }
