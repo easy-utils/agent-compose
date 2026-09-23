@@ -162,7 +162,12 @@ compose.desktop {
             // format is actually produced); the appstore publishes the deb.
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Easy Agent"
-            packageVersion = "0.1.2"
+            // jpackage (macOS .dmg) rejects a version whose FIRST number is 0
+            // ("The first number in an app-version cannot be zero or
+            // negative"), so the macOS packaging host overrides it with
+            // -PpackageVersion=1.0.2. Other formats keep the product version.
+            packageVersion = (project.findProperty("packageVersion") as String?)
+                ?: "0.1.2"
             description = "Easy Agent (Compose Multiplatform)"
             vendor = "EasyLab"
             macOS {
